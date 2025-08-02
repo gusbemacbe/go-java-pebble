@@ -55,8 +55,10 @@ func (template *PebbleTemplate) Evaluate(writer io.Writer, context map[string]in
 func (template *PebbleTemplate) EvaluateAndGetResult(context map[string]interface{}) (string, error) {
 	var writer bytes.Buffer
 	err := template.Evaluate(&writer, context)
+
 	if err != nil {
 		return "", err
 	}
+
 	return writer.String(), nil
 }
