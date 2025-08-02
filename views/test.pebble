@@ -1,0 +1,11 @@
+{% if user.isAdmin %}
+  <h1>Welcome, administrator!</h1>
+{% else %}
+  <h1>Welcome, {{ user.name }}!</h1>
+{% endif %}
+
+<ul>
+  {% for item in items %}
+    <li>{{ item }}</li>
+  {% endfor %}
+</ul>
