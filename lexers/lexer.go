@@ -2,6 +2,7 @@ package lexers
 
 import (
 	"fmt"
+	"go-java-pebble/filters"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -111,32 +112,160 @@ func lexFor(input string, data map[string]interface{}, strictVariables bool) str
 	})
 }
 
-// The lexVariables function replaces simple `{{ variable }}` placeholders, and now passes the `strictVariables` flag to the resolver
+// The `parseFilterArgs` function intelligently splits the arguments, respecting the quoted strings
+func parseFilterArgs(argString string) []string {
+	var args []string
+	var currentArg strings.Builder
+	inQuotes := false
+
+	for _, char := range argString {
+		switch char {
+		case '"':
+			inQuotes = !inQuotes
+		case ',':
+			if inQuotes {
+				currentArg.WriteRune(char)
+			} else {
+				// Argument separator found, adding the completed argument to the list
+				args = append(args, strings.TrimSpace(currentArg.String()))
+				currentArg.Reset()
+			}
+		default:
+			currentArg.WriteRune(char)
+		}
+	}
+	// Adding the final argument
+	args = append(args, strings.TrimSpace(currentArg.String()))
+
+	// Cleaning up the arguments by removing quotes and the `key=` part
+	for i, arg := range args {
+		if equalIndex := strings.Index(arg, "="); equalIndex != -1 {
+			arg = arg[equalIndex+1:]
+		}
+		args[i] = strings.Trim(arg, `"`)
+	}
+
+	return args
+}
+
+// The lexVariables function can
+// - replace the simple `{{ variable }}` placeholders,
+// - passe the `strictVariables` flag to the resolver
+// - parse and apply the filters
 func lexVariables(input string, data map[string]interface{}, strictVariables bool) string {
+	// This regex now captures the main variable/literal and the filter chain
 	re := regexp.MustCompile(`{{\s*(.*?)\s*}}`)
 
 	return re.ReplaceAllStringFunc(input, func(match string) string {
-		key := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(match, "{{"), "}}"))
+		fullExpression := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(match, "{{"), "}}"))
 
-		if val, ok := getValueFromContext(key, data); ok {
-			// Checking for nil before formatting to ensure the null safety
-			if val == nil {
-				return ""
+		// Splitting the expression into the base variable and the filter chain
+		parts := strings.SplitN(fullExpression, "|", 2)
+		variablePart := strings.TrimSpace(parts[0])
+		var filterChainPart string
+
+		if len(parts) > 1 {
+			filterChainPart = strings.TrimSpace(parts[1])
+		}
+
+		var initialValue interface{}
+		var exists bool
+
+		// Checking if the variable part is a string literal
+		if (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
+			(strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`)) {
+			initialValue = variablePart[1 : len(variablePart)-1]
+			exists = true
+		} else {
+			// Otherwise, resolving it from the context
+			initialValue, exists = getValueFromContext(variablePart, data)
+		}
+
+		// Applying the `default` filter logic early if it is present
+		// Creating a regular expression to specifically find and handle the `default` filter
+		reDefault := regexp.MustCompile(`default\s*\(([^)]+)\)`)
+		if reDefault.MatchString(filterChainPart) {
+			// Checking if the main variable is empty
+			isEmpty := !exists || initialValue == nil
+			if s, ok := initialValue.(string); ok && s == "" {
+				isEmpty = true
 			}
-			return fmt.Sprintf("%v", val)
+
+			if isEmpty {
+				// If it is empty, we extract the default value and return it immediately
+				matches := reDefault.FindStringSubmatch(filterChainPart)
+				defaultValue := strings.Trim(matches[1], `"'`)
+				return defaultValue
+			} else {
+				// If the variable is not empty, we remove the `default` filter from the chain and proceed
+				filterChainPart = reDefault.ReplaceAllString(filterChainPart, "")
+			}
 		}
 
-		// Adhering to `strictVariables` (though error throwing is a future step)
-		if strictVariables {
-			// For now, returning an error message, but this should propagate an error
-			return "[ERROR: Variable not found]"
+		if !exists {
+			// Adhering to `strictVariables` (though error throwing is a future step)
+			if strictVariables {
+				// For now, returning an error message, but this should propagate an error
+				return fmt.Sprintf("[ERROR: Variable «%s» not found]", variablePart)
+			}
+
+			return ""
 		}
 
-		return ""
+		// Checking for nil before formatting to ensure the null safety
+		if initialValue == nil {
+			return ""
+		}
+
+		// If there are no filters, returning the value directly
+		if filterChainPart == "" {
+			return fmt.Sprintf("%v", initialValue)
+		}
+
+		// Processing the filter chain
+		currentValue := initialValue
+		filterExpressions := strings.Split(filterChainPart, "|")
+
+		for _, filterExpr := range filterExpressions {
+			filterExpr = strings.TrimSpace(filterExpr)
+			if filterExpr == "" {
+				continue
+			}
+
+			// Parsing the filter name and arguments
+			reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
+			filterMatches := reFilter.FindStringSubmatch(filterExpr)
+
+			if len(filterMatches) < 2 {
+				// This should not happen with a valid filter expression
+				continue
+			}
+
+			filterName := filterMatches[1]
+			var filterArgs []string
+
+			if len(filterMatches) > 2 && filterMatches[2] != "" {
+				// Splitting arguments by comma, but respecting quotes
+				// This is a simplified parser; a full implementation would be more complex
+				// Using the new robust argument parser
+				filterArgs = parseFilterArgs(filterMatches[2])
+			}
+
+			var err error
+			currentValue, err = filters.Apply(currentValue, filterName, filterArgs)
+			if err != nil {
+				// In a real application, you might want to handle this error more gracefully
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
+			}
+		}
+
+		return fmt.Sprintf("%v", currentValue)
 	})
 }
 
-// The `getValueFromContext` function retrieves a value from the context map, supporting the dot notation for nested maps, and can now parse complex paths involving the dot and thr subscript notation
+// The `getValueFromContext` function can:
+// - retrieve a value from the context map, supporting the dot notation for nested maps;
+// - parse complex paths involving the dot and the subscript notation;
 func getValueFromContext(path string, data map[string]interface{}) (interface{}, bool) {
 	// Handling the case where the path itself is a key in the top-level map
 	if val, ok := data[path]; ok {
@@ -185,6 +314,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 					if !mapVal.IsValid() {
 						return nil, false
 					}
+
 					currentVal = mapVal.Interface()
 
 				} else if v.Kind() == reflect.Struct {
@@ -196,6 +326,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 					}
 
 					currentVal = fieldVal.Interface()
+
 				} else {
 					return nil, false
 				}
@@ -209,6 +340,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 					}
 
 					currentVal = v.Index(index).Interface()
+
 				} else {
 					return nil, false
 				}

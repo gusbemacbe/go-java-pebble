@@ -1,0 +1,34 @@
+## Testing the `abbreviate` Filter
+{{ "This is a very long sentence." | abbreviate(10) }}
+{{ "Short" | abbreviate(10) }}
+
+---
+
+## Testing the `base64` Filters
+Encoded: {{ "testing base64" | base64encode }}
+Decoded: {{ "dGVzdGluZyBiYXNlNjQ=" | base64decode }}
+
+---
+
+## Testing the `capitalize` and `capitalise` Filters
+American: {{ "a title" | capitalize }}
+British: {{ "another title"|capitalise }}
+
+---
+
+## Testing the `date` Filter
+From time.Time object: {{ birthday | date("yyyy-MM-dd") }}
+From string: {{ "August 2, 2025" | date("dd-MM-yyyy", existingFormat="MMMM d, yyyy") }}
+
+---
+
+## Testing the `default` Filter
+With existing variable: «{{ username | default("Guest") }}»
+With non-existent variable: «{{ nonExistent | default("Default Value") }}»
+With a nil variable: «{{ nilVar | default("Fallback for nil") }}»
+
+---
+
+## Testing Chained Filters
+{{ "A boring sentence." | upper | abbreviate(10) }}
+{{ "another boring sentence."|capitalize|abbreviate(15) }}
