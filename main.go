@@ -36,6 +36,17 @@ func main() {
 	pebContext["name"] = "Gus"
 	runTest(engine, "views/test.peb", pebContext, "Simple Variable Replacement")
 
+	// --- Tests for `views/test.pebble` ---
+	pebbleAdminContext := make(map[string]interface{})
+	pebbleAdminContext["user"] = map[string]interface{}{"name": "Administrator", "isAdmin": true}
+	pebbleAdminContext["items"] = []string{"Dashboard", "Users", "Settings"}
+	runTest(engine, "views/test.pebble", pebbleAdminContext, "Comprehensive Test - Admin User")
+
+	pebbleUserContext := make(map[string]interface{})
+	pebbleUserContext["user"] = map[string]interface{}{"name": "Gus", "isAdmin": false}
+	pebbleUserContext["items"] = []string{"Profile", "Messages", "Logout"}
+	runTest(engine, "views/test.pebble", pebbleUserContext, "Comprehensive Test - Regular User")
+
 	// --- Tests for `views/test_block_statements_delimiter.peb` ---
 	// Test Case 1: Admin User
 	adminContext := make(map[string]interface{})
@@ -58,26 +69,22 @@ func main() {
 	userContext["colors"] = []string{"Yellow", "Purple"}
 	runTest(engine, "views/test_block_statements_delimiter.peb", userContext, "Block Statements - Regular User")
 
-	// --- Tests for `views/test.pebble` ---
-	// Test Case 1: Admin User
-	pebbleAdminContext := make(map[string]interface{})
-	pebbleAdminContext["user"] = map[string]interface{}{
-		"name":    "Administrator",
-		"isAdmin": true,
+	// --- New Tests for `views/test_attributes.peb` ---
+	attributeContext := make(map[string]interface{})
+	attributeContext["user"] = User{
+		Name: "Benozzo",
+		Age:  30,
+		Profile: &Profile{
+			URL: "https://example.com/benozzo",
+		},
 	}
-
-	pebbleAdminContext["items"] = []string{"Dashboard", "Users", "Settings"}
-	runTest(engine, "views/test.pebble", pebbleAdminContext, "Comprehensive Test - Admin User")
-
-	// Test Case 2: Regular User
-	pebbleUserContext := make(map[string]interface{})
-	pebbleUserContext["user"] = map[string]interface{}{
-		"name":    "Gus",
-		"isAdmin": false,
+	attributeContext["settings"] = map[string]string{
+		"theme":       "dark",
+		"font-family": "DejaVu Sans Mono",
 	}
-
-	pebbleUserContext["items"] = []string{"Profile", "Messages", "Logout"}
-	runTest(engine, "views/test.pebble", pebbleUserContext, "Comprehensive Test - Regular User")
+	attributeContext["colors"] = []string{"Orange", "Cyan", "Magenta"}
+	attributeContext["nilObject"] = nil
+	runTest(engine, "views/test_attributes.peb", attributeContext, "Attribute, Map, and Slice Access")
 
 	fmt.Println("---------------------------------")
 	fmt.Println("All test cases have been executed.")

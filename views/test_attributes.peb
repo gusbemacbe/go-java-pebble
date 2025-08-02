@@ -1,0 +1,23 @@
+## Testing the structs and the maps
+
+Accessing a user's name (struct field): «{{ user.Name }}»
+Accessing a user's age (struct field): «{{ user.Age }}»
+Accessing a profile URL (nested struct field): «{{ user.Profile.URL }}»
+Accessing a theme setting (map value): «{{ settings.theme }}»
+Accessing a font setting with atypical characters (map value): «{{ settings["font-family"] }}»
+
+---
+
+## Testing the slices
+
+Accessing the first color (slice element): «{{ colors[0] }}»
+Accessing the third color (slice element): «{{ colors[2] }}»
+
+---
+
+## Testing thr null safety (`strictVariables` = false)
+
+Accessing a non-existent struct attribute: «{{ user.nonexistent }}»
+Accessing a non-existent map key: «{{ settings.nonexistent }}»
+Accessing a slice element that is out of bounds: «{{ colors[5] }}»
+Accessing an attribute on a nil object: «{{ nilObject.property }}»
