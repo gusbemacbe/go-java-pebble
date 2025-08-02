@@ -1,0 +1,12 @@
+{% if user.isAdmin %}
+  <p>Welcome, administrator: {{ user.name }}!</p>
+{% else %}
+  <p>Welcome, user: {{ user.name }}!</p>
+{% endif %}
+
+<h2>Favourite Colours:</h2>
+<ul>
+  {% for color in colors %}
+    <li>{{ color }}</li>
+  {% endfor %}
+</ul>

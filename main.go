@@ -5,31 +5,80 @@ import (
 	"log"
 )
 
-func main() {
-	// Creating a new instance of the `PebbleEngine`
-	engine := NewEngine()
+// The `runTest` function encapsulates the logic for running a single template test
+func runTest(engine *PebbleEngine, templatePath string, context map[string]interface{}, testName string) {
+	fmt.Printf("--- Running Test Case: «%s» ---\n", testName)
 
 	// Getting the template from the specified path
-	// The path is relative to the project's root directory
-	compiledTemplate, err := engine.GetTemplate("views/test.peb")
+	compiledTemplate, err := engine.GetTemplate(templatePath)
 
 	if err != nil {
-		log.Fatalf("«Error getting template: %v»", err)
+		log.Fatalf("«Error getting template '%s': %v»", templatePath, err)
 	}
-
-	// Creating a context map to hold the variables for the template
-	context := make(map[string]interface{})
-	context["name"] = "Gus"
 
 	// Evaluating the template with the provided context
 	output, err := compiledTemplate.EvaluateAndGetResult(context)
 
 	if err != nil {
-		log.Fatalf("«Error evaluating template: %v»", err)
+		log.Fatalf("«Error evaluating the template '%s': %v»", templatePath, err)
 	}
 
 	// Printing the final output
-	fmt.Println("--- Template Output ---")
 	fmt.Println(output)
-	fmt.Println("-----------------------")
+}
+
+func main() {
+	// Creating a new instance of the `PebbleEngine`
+	engine := NewEngine()
+
+	// --- Test for `views/test.peb` ---
+	pebContext := make(map[string]interface{})
+	pebContext["name"] = "Gus"
+	runTest(engine, "views/test.peb", pebContext, "Simple Variable Replacement")
+
+	// --- Tests for `views/test_block_statements_delimiter.peb` ---
+	// Test Case 1: Admin User
+	adminContext := make(map[string]interface{})
+	adminContext["user"] = map[string]interface{}{
+		"name":    "Benozzo",
+		"isAdmin": true,
+	}
+
+	adminContext["colors"] = []string{"Red", "Green", "Blue"}
+
+	runTest(engine, "views/test_block_statements_delimiter.peb", adminContext, "Block Statements - Admin User")
+
+	// Test Case 2: Regular User
+	userContext := make(map[string]interface{})
+	userContext["user"] = map[string]interface{}{
+		"name":    "Gus",
+		"isAdmin": false,
+	}
+
+	userContext["colors"] = []string{"Yellow", "Purple"}
+	runTest(engine, "views/test_block_statements_delimiter.peb", userContext, "Block Statements - Regular User")
+
+	// --- Tests for `views/test.pebble` ---
+	// Test Case 1: Admin User
+	pebbleAdminContext := make(map[string]interface{})
+	pebbleAdminContext["user"] = map[string]interface{}{
+		"name":    "Administrator",
+		"isAdmin": true,
+	}
+
+	pebbleAdminContext["items"] = []string{"Dashboard", "Users", "Settings"}
+	runTest(engine, "views/test.pebble", pebbleAdminContext, "Comprehensive Test - Admin User")
+
+	// Test Case 2: Regular User
+	pebbleUserContext := make(map[string]interface{})
+	pebbleUserContext["user"] = map[string]interface{}{
+		"name":    "Gus",
+		"isAdmin": false,
+	}
+
+	pebbleUserContext["items"] = []string{"Profile", "Messages", "Logout"}
+	runTest(engine, "views/test.pebble", pebbleUserContext, "Comprehensive Test - Regular User")
+
+	fmt.Println("---------------------------------")
+	fmt.Println("All test cases have been executed.")
 }
