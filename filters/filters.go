@@ -36,8 +36,12 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 		return filterFirst(input, nil)
 	case "last":
 		return filterLast(input, nil)
+	case "length":
+		return filterLength(input, nil)
 	case "lower":
 		return filterLower(input, nil)
+	case "numberformat":
+		return filterNumberFormat(input, args)
 	case "raw":
 		// The `raw` filter does nothing but signal the lexer; it returns the input unchanged
 		return input, nil
@@ -54,6 +58,52 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 	default:
 		return nil, fmt.Errorf("«filter '%s' not found»", filterName)
 	}
+}
+
+// The `filterLength` function returns the length of a string, slice, or map
+func filterLength(input interface{}, _ []string) (int, error) {
+	val := reflect.ValueOf(input)
+
+	switch val.Kind() {
+	case reflect.String, reflect.Slice, reflect.Array, reflect.Map:
+		return val.Len(), nil
+	default:
+		return 0, fmt.Errorf("«the 'length' filter can only be applied to strings, collections, and maps»")
+	}
+}
+
+// The `filterNumberFormat` function formats a number according to a basic pattern
+func filterNumberFormat(input interface{}, args []string) (string, error) {
+	if len(args) != 1 {
+		return "", fmt.Errorf("«the 'numberformat' filter requires exactly one argument (the format string)»")
+	}
+
+	format := args[0]
+	val := reflect.ValueOf(input)
+	var floatVal float64
+
+	// Converting the input to a `float64`
+	switch val.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		floatVal = float64(val.Int())
+	case reflect.Float32, reflect.Float64:
+		floatVal = val.Float()
+	default:
+		return "", fmt.Errorf("«the 'numberformat' filter can only be applied to numeric types»")
+	}
+
+	// Implementing a very basic parser for the format string
+	if strings.Contains(format, ".") {
+		parts := strings.Split(format, ".")
+
+		if len(parts) == 2 {
+			precision := len(parts[1])
+			return fmt.Sprintf("%."+strconv.Itoa(precision)+"f", floatVal), nil
+		}
+	}
+
+	// Defaulting to a standard float representation if the format is not recognized
+	return fmt.Sprintf("%f", floatVal), nil
 }
 
 // The `sortSlice` function provides a generic sorting mechanism for slices of basic types

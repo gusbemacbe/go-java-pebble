@@ -1,0 +1,3 @@
+String length: {{ "word" | length }}
+Slice length: {{ users | length }}
+Map length: {{ settings | length }}

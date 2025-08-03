@@ -156,10 +156,10 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 			for k, v := range data {
 				loopContext[k] = v
 			}
-
+			// Adding the current loop variable (e.g., `user`) to the context
 			loopContext[loopVar] = val.Index(i).Interface()
 
-			// Recursively calling `Lex` on the loop body with the new context
+			// Recursively processing the loop body with the new context
 			result.WriteString(Lex(loopBody, loopContext, engineConfig))
 		}
 
@@ -227,16 +227,21 @@ func lexVariables(input string, data map[string]interface{}, engineConfig Engine
 		var exists bool
 
 		// Checking if the variable part is a string literal
-		isLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
+		isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
 			(strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
 
-		if isLiteral {
+		if isStringLiteral {
 			initialValue = variablePart[1 : len(variablePart)-1]
 			exists = true
-
 		} else {
-			// Otherwise, resolving it from the context
-			initialValue, exists = getValueFromContext(variablePart, data)
+			// Checking if the variable part is a numeric literal
+			if num, err := strconv.ParseFloat(variablePart, 64); err == nil {
+				initialValue = num
+				exists = true
+			} else {
+				// Otherwise, resolving it from the context
+				initialValue, exists = getValueFromContext(variablePart, data)
+			}
 		}
 
 		// Applying the `default` filter logic early if it is present
@@ -325,7 +330,8 @@ func lexVariables(input string, data map[string]interface{}, engineConfig Engine
 				shouldEscape = false
 			}
 		}
-		if isLiteral {
+
+		if isStringLiteral {
 			shouldEscape = false
 		}
 

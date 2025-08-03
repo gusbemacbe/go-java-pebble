@@ -108,6 +108,13 @@ func main() {
 	runTest(engine, "views/test_filter_lower.peb", nil, "Lower Filter")
 	runTest(engine, "views/test_filter_title.peb", nil, "Title Filter")
 
+	// --- Tests for `reverse`, `sort`, `rsort` filters ---
+	sortableContext := make(map[string]interface{})
+	sortableContext["users"] = []string{"Joe", "Alex", "Bob"}
+	runTest(engine, "views/test_filter_reverse.peb", sortableContext, "Reverse Filter")
+	runTest(engine, "views/test_filter_sort.peb", sortableContext, "Sort Filter")
+	runTest(engine, "views/test_filter_rsort.peb", sortableContext, "Reverse Sort Filter")
+
 	fmt.Println("---------------------------------")
 	fmt.Println("All test cases have been executed.")
 }

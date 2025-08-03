@@ -1,0 +1,1 @@
+Formatted number: {{ 3.141592653 | numberformat("#.##") }}
