@@ -1,0 +1,2 @@
+First user in list: {{ users | first }}
+First letter of string: {{ "Mitch" | first }}

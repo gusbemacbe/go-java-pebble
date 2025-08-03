@@ -95,6 +95,11 @@ func main() {
 	filterContext["nilVar"] = nil
 	runTest(engine, "views/test_filters.peb", filterContext, "Template Filters")
 
+	// --- Test for `views/test_filter_escape.peb` ---
+	escapeContext := make(map[string]interface{})
+	escapeContext["dangerousHTML"] = "<div>"
+	runTest(engine.SetAutoEscaping(false), "views/test_filter_escape.peb", escapeContext, "Manual Escaping")
+
 	fmt.Println("---------------------------------")
 	fmt.Println("All test cases have been executed.")
 }

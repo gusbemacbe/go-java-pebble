@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -30,14 +31,97 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 		return nil, fmt.Errorf("«the ‘default’ filter should be handled by the lexer»")
 	case "escape":
 		return filterEscape(input, args)
+	case "first":
+		return filterFirst(input, nil)
+	case "last":
+		return filterLast(input, nil)
+	case "lower":
+		return filterLower(input, nil)
 	case "raw":
 		// The `raw` filter does nothing but signal the lexer; it returns the input unchanged
 		return input, nil
+	case "title":
+		return filterTitle(input, nil)
 	case "upper":
 		return filterUpper(input, nil)
 	default:
 		return nil, fmt.Errorf("«filter '%s' not found»", filterName)
 	}
+}
+
+// The `filterFirst` function returns the first item of a collection or character of a string
+func filterFirst(input interface{}, _ []string) (interface{}, error) {
+	val := reflect.ValueOf(input)
+
+	switch val.Kind() {
+	case reflect.String:
+		str := val.String()
+
+		if str == "" {
+			return "", nil
+		}
+
+		r, _ := utf8.DecodeRuneInString(str)
+		return string(r), nil
+	case reflect.Slice, reflect.Array:
+		if val.Len() == 0 {
+			return nil, nil
+		}
+
+		return val.Index(0).Interface(), nil
+	default:
+		return nil, fmt.Errorf("«the 'first' filter can only be applied to the strings and collections»")
+	}
+}
+
+// The `filterLast` function returns the last item of a collection or character of a string
+func filterLast(input interface{}, _ []string) (interface{}, error) {
+	val := reflect.ValueOf(input)
+
+	switch val.Kind() {
+	case reflect.String:
+
+		str := val.String()
+		if str == "" {
+			return "", nil
+		}
+
+		r, _ := utf8.DecodeLastRuneInString(str)
+
+		return string(r), nil
+	case reflect.Slice, reflect.Array:
+		if val.Len() == 0 {
+			return nil, nil
+		}
+
+		return val.Index(val.Len() - 1).Interface(), nil
+	default:
+		return nil, fmt.Errorf("«the 'last' filter can only be applied to strings and collections»")
+	}
+}
+
+// The `filterLower` function converts a string to lowercase
+func filterLower(input interface{}, _ []string) (string, error) {
+	return strings.ToLower(fmt.Sprintf("%v", input)), nil
+}
+
+// The `filterTitle` function capitalizes the first letter of each word in a string
+func filterTitle(input interface{}, _ []string) (string, error) {
+	// The `strings.ToTitle` function is deprecated, so we use the recommended `golang.org/x/text` package approach
+	// However, to avoid adding a new dependency, a simple manual implementation is provided.
+	// For full Unicode correctness, the text package would be better.
+	words := strings.Fields(fmt.Sprintf("%v", input))
+
+	for i, word := range words {
+		if word == "" {
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(word)
+		words[i] = string(unicode.ToUpper(r)) + word[size:]
+	}
+
+	return strings.Join(words, " "), nil
 }
 
 // The `filterEscape` function escapes a string based on the given strategy
