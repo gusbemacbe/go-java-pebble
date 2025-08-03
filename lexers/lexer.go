@@ -16,18 +16,82 @@ type EngineConfig struct {
 	DefaultEscapingStrategy string
 }
 
+// The `TemplateState` struct holds state specific to a single template rendering,
+// such as the content of declared blocks.
+type TemplateState struct {
+	blocks map[string]string
+}
+
 // The `pathSegmentRegex` is used to tokenize an access path like `user.profile["url"]`
 var pathSegmentRegex = regexp.MustCompile(`(\w+)|\["([^"]+)"\]|\[(\d+)\]`)
 
 // The `Lex` function performs lexical analysis and replacement of Pebble expressions
-// It processes blocks in a specific order: `if`, `for`, and `then` variables
+// The order of operations is critical: tags, then functions, then variables
 func Lex(input string, data map[string]interface{}, engineConfig EngineConfig) string {
-	// Processing the `if` statements
-	output := lexIf(input, data, engineConfig)
-	// Processing the `for` loops on the result of the `if` processing
+	// Initializing the state for this render
+	state := &TemplateState{
+		blocks: make(map[string]string),
+	}
+
+	// 1. First pass: Process tags like `{% block %}` and `{% flush %}`.
+	//    The `lexTags` function will find all `block` declarations, store their content in the `state`, and remove the tags from the output.
+	output := lexTags(input, state)
+
+	// 2. Second pass: Process functions like `{{ block() }}`.
+	//    This pass will replace function calls with their appropriate content.
+	output = lexFunctions(output, data, engineConfig, state)
+
+	// 3. Third pass: Process standard `if` and `for` blocks.
+	output = lexIf(output, data, engineConfig)
 	output = lexFor(output, data, engineConfig)
-	// Processing the variable placeholders on the result of the `for` processing
+
+	// 4. Final pass: Process variable expressions like `{{ user.name }}`.
 	output = lexVariables(output, data, engineConfig)
+
+	return output
+}
+
+// The `lexTags` function handles the initial processing of tags like `{% block %}`
+func lexTags(input string, state *TemplateState) string {
+	// The regular expression to find `{% block "name" %}...{% endblock %}`
+	reBlock := regexp.MustCompile(`(?s){%\s*block\s+"([^"]+)"\s*%}(.*?){%\s*endblock\s*%}`)
+
+	// Finding all block definitions, storing their content, and removing them
+	output := reBlock.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := reBlock.FindStringSubmatch(match)
+		blockName := submatches[1]
+		blockContent := submatches[2]
+
+		// Storing the captured content in our state map
+		state.blocks[blockName] = blockContent
+
+		// Returning the content so it is rendered the first time in its original location
+		return blockContent
+	})
+
+	// Regex to find and simply remove `{% flush %}` tags, as they have no effect in our in-memory model
+	reFlush := regexp.MustCompile(`(?s){%\s*flush\s*%}`)
+	output = reFlush.ReplaceAllString(output, "")
+
+	return output
+}
+
+// The `lexFunctions` function handles the processing of functions like `{{ block() }}`
+func lexFunctions(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
+	// Regex to find `{{ block("name") }}`
+	reBlockFunc := regexp.MustCompile(`{{\s*block\s*\("([^"]+)"\)\s*}}`)
+
+	output := reBlockFunc.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := reBlockFunc.FindStringSubmatch(match)
+		blockName := submatches[1]
+
+		// Retrieving the stored block content from our state
+		if content, ok := state.blocks[blockName]; ok {
+			return content
+		}
+
+		return ""
+	})
 
 	return output
 }

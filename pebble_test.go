@@ -529,3 +529,41 @@ func TestJoinFilter(t *testing.T) {
 		t.Errorf("«The `join` filter failed with the default separator»")
 	}
 }
+
+// The TestBlockFunction function validates the `block` tag and function
+func TestBlockFunction(t *testing.T) {
+	t.Log("--- Running Test Case: «Block Tag and Function» ---")
+	engine := NewEngine()
+	template, _ := engine.GetTemplate("views/test_function_block.peb")
+	output, _ := template.EvaluateAndGetResult(nil)
+
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := "This is the post content.\n\nRendering the block again: This is the post content."
+	// Normalizing whitespace for a more robust comparison
+	normalizedOutput := strings.Join(strings.Fields(output), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if normalizedOutput != normalizedExpected {
+		t.Errorf("«The `block` function failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
+	}
+}
+
+// The TestFlushTag function validates the parsing of the `flush` tag
+func TestFlushTag(t *testing.T) {
+	t.Log("--- Running Test Case: «Flush Tag» ---")
+	engine := NewEngine()
+	template, _ := engine.GetTemplate("views/test_tag_flush.peb")
+	output, _ := template.EvaluateAndGetResult(nil)
+
+	t.Logf("Rendered output:\n%s", output)
+
+	// The `flush` tag should be removed and have no other effect in our implementation
+	expected := "This part is rendered first.\n\nThis part is rendered after the flush."
+	normalizedOutput := strings.Join(strings.Fields(output), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if normalizedOutput != normalizedExpected {
+		t.Errorf("«The `flush` tag was not correctly parsed and removed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
+	}
+}

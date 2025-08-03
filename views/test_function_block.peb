@@ -1,0 +1,3 @@
+{% block "post" %}This is the post content.{% endblock %}
+
+Rendering the block again: {{ block("post") }}
