@@ -7,7 +7,36 @@ import (
 	"go-java-pebble/lexers"
 	"io"
 	"regexp"
+	"sync"
 )
+
+// The `DefaultCache` is a simple, thread-safe, in-memory cache implementation
+type DefaultCache struct {
+	mu    sync.RWMutex
+	items map[string]interface{}
+}
+
+// The `NewDefaultCache` is the constructor for the `DefaultCache`
+func NewDefaultCache() *DefaultCache {
+	return &DefaultCache{
+		items: make(map[string]interface{}),
+	}
+}
+
+// The `Get` method retrieves an item from the cache
+func (c *DefaultCache) Get(key string) (interface{}, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	item, found := c.items[key]
+	return item, found
+}
+
+// The `Set` method adds an item to the cache
+func (c *DefaultCache) Set(key string, value interface{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items[key] = value
+}
 
 // The `PebbleEngine` struct is the main entry point for using the Pebble templating engine
 type PebbleEngine struct {
@@ -21,6 +50,8 @@ type PebbleEngine struct {
 	DefaultEscapingStrategy string
 	// The `DefaultLocale` sets the default locale for the `i18n` function
 	DefaultLocale string
+	// The `TagCache` provides a cache for the `{% cache %}` tag
+	TagCache lexers.Cache
 }
 
 // The `NewEngine` function is a constructor for the `PebbleEngine`
@@ -31,6 +62,7 @@ func NewEngine() *PebbleEngine {
 		AutoEscaping:            true,
 		DefaultEscapingStrategy: "html",
 		DefaultLocale:           "", // Defaults to the system's language if not set
+		TagCache:                NewDefaultCache(),
 	}
 }
 
@@ -43,6 +75,12 @@ func (e *PebbleEngine) SetAutoEscaping(auto bool) *PebbleEngine {
 // The `SetDefaultLocale` is a builder method to configure the default locale
 func (e *PebbleEngine) SetDefaultLocale(locale string) *PebbleEngine {
 	e.DefaultLocale = locale
+	return e
+}
+
+// The `SetTagCache` is a builder method to provide a custom cache implementation
+func (e *PebbleEngine) SetTagCache(cache lexers.Cache) *PebbleEngine {
+	e.TagCache = cache
 	return e
 }
 
@@ -144,6 +182,7 @@ func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map
 		AutoEscaping:            template.engine.AutoEscaping,
 		DefaultEscapingStrategy: template.engine.DefaultEscapingStrategy,
 		Locale:                  locale,
+		TagCache:                template.engine.TagCache,
 	}
 
 	// The lexer needs access to the template hierarchy to handle the `parent()` function

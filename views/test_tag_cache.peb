@@ -1,0 +1,5 @@
+This content is outside the cache.
+
+{% cache 'widget_cache' %}
+  This content is inside the cache. Render count: {{ counter }}
+{% endcache %}

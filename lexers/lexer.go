@@ -10,12 +10,19 @@ import (
 	"strings"
 )
 
+// The `Cache` interface defines the contract for a generic key-value cache
+type Cache interface {
+	Get(key string) (interface{}, bool)
+	Set(key string, value interface{})
+}
+
 // The `EngineConfig` struct passes down the engine-wide settings to the lexer
 type EngineConfig struct {
 	StrictVariables         bool
 	AutoEscaping            bool
 	DefaultEscapingStrategy string
 	Locale                  string
+	TagCache                Cache
 }
 
 // The `Template` interface defines the contract that the lexer needs to interact with a template,
@@ -59,13 +66,41 @@ func Lex(input string, data map[string]interface{}, engineConfig EngineConfig, s
 	return output
 }
 
-// The `lexTags` function handles the processing of tags, now with inheritance logic
+// The `lexTags` function handles the processing of tags, now with inheritance and caching logic
 func lexTags(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
+	// Processing `cache` tags first
+	reCache := regexp.MustCompile(`(?s){%\s*cache\s+'([^']+)'\s*%}(.*?){%\s*endcache\s*%}`)
+	output := reCache.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := reCache.FindStringSubmatch(match)
+		cacheName := submatches[1]
+		content := submatches[2]
+
+		// Constructing the cache key from the name and locale
+		cacheKey := fmt.Sprintf("%s_%s", cacheName, engineConfig.Locale)
+
+		if engineConfig.TagCache != nil {
+			if cached, found := engineConfig.TagCache.Get(cacheKey); found {
+				// If found in cache, returning the cached content
+				return fmt.Sprintf("%v", cached)
+			}
+		}
+
+		// If not in cache, rendering the content
+		renderedContent := Lex(content, data, engineConfig, state)
+
+		if engineConfig.TagCache != nil {
+			// Storing the newly rendered content in the cache
+			engineConfig.TagCache.Set(cacheKey, renderedContent)
+		}
+
+		return renderedContent
+	})
+
 	// The regular expression to find `{% block "name" %}...{% endblock %}`
 	reBlock := regexp.MustCompile(`(?s){%\s*block\s+"([^"]+)"\s*%}(.*?){%\s*endblock\s*%}`)
 
 	// Finding all block definitions, storing their content, and replacing the tag with the content
-	output := reBlock.ReplaceAllStringFunc(input, func(match string) string {
+	output = reBlock.ReplaceAllStringFunc(output, func(match string) string {
 		submatches := reBlock.FindStringSubmatch(match)
 		blockName := submatches[1]
 

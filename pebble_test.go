@@ -665,6 +665,34 @@ func TestTemplateInheritance(t *testing.T) {
 	}
 }
 
+// The `TestCacheTag` function validates the `cache` tag
+func TestCacheTag(t *testing.T) {
+	t.Log("--- Running Test Case: «Cache Tag» ---")
+	engine := pebble.NewEngine()
+	template, _ := engine.GetTemplate("views/test_tag_cache.peb")
+
+	// --- First Render ---
+	context1 := make(map[string]interface{})
+	context1["counter"] = 1
+	output1, _ := template.EvaluateAndGetResult(context1, "")
+
+	t.Logf("Rendered output (first pass):\n%s", output1)
+	if !strings.Contains(output1, "Render count: 1") {
+		t.Errorf("«Cache block failed to render correctly on the first pass»")
+	}
+
+	// --- Second Render ---
+	// The counter is now different, but the output should be the same because it is cached
+	context2 := make(map[string]interface{})
+	context2["counter"] = 999
+	output2, _ := template.EvaluateAndGetResult(context2, "")
+
+	t.Logf("Rendered output (second pass):\n%s", output2)
+	if !strings.Contains(output2, "Render count: 1") {
+		t.Errorf("«Cache block was not served from cache on the second pass»")
+	}
+}
+
 // The `TestRangeFunction` function validates the `range` function and `..` operator
 func TestRangeFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «Range Function and Operator» ---")
