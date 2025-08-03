@@ -9,24 +9,33 @@ import (
 	"strings"
 )
 
+// The EngineConfig struct passes down engine-wide settings to the lexer
+type EngineConfig struct {
+	StrictVariables         bool
+	AutoEscaping            bool
+	DefaultEscapingStrategy string
+}
+
 // The `pathSegmentRegex` is used to tokenize an access path like `user.profile["url"]`
 var pathSegmentRegex = regexp.MustCompile(`(\w+)|\["([^"]+)"\]|\[(\d+)\]`)
 
 // The `Lex` function performs lexical analysis and replacement of Pebble expressions
 // It processes blocks in a specific order: `if`, `for`, and `then` variables
-func Lex(input string, data map[string]interface{}, strictVariables bool) string {
+func Lex(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// Processing the `if` statements
-	output := lexIf(input, data, strictVariables)
+	output := lexIf(input, data, engineConfig)
 	// Processing the `for` loops on the result of the `if` processing
-	output = lexFor(output, data, strictVariables)
+	output = lexFor(output, data, engineConfig)
 	// Processing the variable placeholders on the result of the `for` processing
-	output = lexVariables(output, data, strictVariables)
+	output = lexVariables(output, data, engineConfig)
 
 	return output
 }
 
-// The lexIf function, finds and processes `{% if ... %}` blocks, and now passes the `strictVariables` flag down to handle the missing variables
-func lexIf(input string, data map[string]interface{}, strictVariables bool) string {
+// The lexIf function can:
+// - find and process `{% if ... %}` blocks
+// - passe the `strictVariables` flag down to handle the missing variables
+func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// Defining the regular expression to find `if-else-endif` blocks
 	// The `(?s)` flag allows `.` to match newline characters
 	re := regexp.MustCompile(`(?s){%\s*if\s+(.*?)\s*%}(.*?)(?:{%\s*else\s*%}(.*?))?{%\s*endif\s*%}`)
@@ -43,7 +52,7 @@ func lexIf(input string, data map[string]interface{}, strictVariables bool) stri
 		// If the variable for the condition does not exist
 		if !exists {
 			// Checking if the strict mode is enabled
-			if strictVariables {
+			if engineConfig.StrictVariables {
 				// In strict mode, a non-existent variable in a condition is an error
 				return fmt.Sprintf("[ERROR: Variable «%s» not found in if condition]", conditionKey)
 			}
@@ -68,8 +77,10 @@ func lexIf(input string, data map[string]interface{}, strictVariables bool) stri
 	})
 }
 
-// The `lexFor` function finds and processes `{% for ... %}` loops, and now passes the `strictVariables` flag down
-func lexFor(input string, data map[string]interface{}, strictVariables bool) string {
+// The `lexFor` function can:
+// - find and process `{% for ... %}` loops
+// - passe the `strictVariables` flag down
+func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// Defining the regular expression to find `for-endfor` blocks
 	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(\w+)\s*%}(.*?){%\s*endfor\s*%}`)
 
@@ -102,10 +113,11 @@ func lexFor(input string, data map[string]interface{}, strictVariables bool) str
 			for k, v := range data {
 				loopContext[k] = v
 			}
+
 			loopContext[loopVar] = val.Index(i).Interface()
 
 			// Recursively calling `Lex` on the loop body with the new context
-			result.WriteString(Lex(loopBody, loopContext, strictVariables))
+			result.WriteString(Lex(loopBody, loopContext, engineConfig))
 		}
 
 		return result.String()
@@ -142,7 +154,7 @@ func parseFilterArgs(argString string) []string {
 		if equalIndex := strings.Index(arg, "="); equalIndex != -1 {
 			arg = arg[equalIndex+1:]
 		}
-		args[i] = strings.Trim(arg, `"`)
+		args[i] = strings.Trim(arg, `"'`)
 	}
 
 	return args
@@ -151,8 +163,8 @@ func parseFilterArgs(argString string) []string {
 // The lexVariables function can
 // - replace the simple `{{ variable }}` placeholders,
 // - passe the `strictVariables` flag to the resolver
-// - parse and apply the filters
-func lexVariables(input string, data map[string]interface{}, strictVariables bool) string {
+// - parse and apply the filters, including the auto-escaping
+func lexVariables(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// This regex now captures the main variable/literal and the filter chain
 	re := regexp.MustCompile(`{{\s*(.*?)\s*}}`)
 
@@ -172,10 +184,13 @@ func lexVariables(input string, data map[string]interface{}, strictVariables boo
 		var exists bool
 
 		// Checking if the variable part is a string literal
-		if (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
-			(strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`)) {
+		isLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
+			(strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
+
+		if isLiteral {
 			initialValue = variablePart[1 : len(variablePart)-1]
 			exists = true
+
 		} else {
 			// Otherwise, resolving it from the context
 			initialValue, exists = getValueFromContext(variablePart, data)
@@ -184,9 +199,11 @@ func lexVariables(input string, data map[string]interface{}, strictVariables boo
 		// Applying the `default` filter logic early if it is present
 		// Creating a regular expression to specifically find and handle the `default` filter
 		reDefault := regexp.MustCompile(`default\s*\(([^)]+)\)`)
+
 		if reDefault.MatchString(filterChainPart) {
 			// Checking if the main variable is empty
 			isEmpty := !exists || initialValue == nil
+
 			if s, ok := initialValue.(string); ok && s == "" {
 				isEmpty = true
 			}
@@ -204,8 +221,7 @@ func lexVariables(input string, data map[string]interface{}, strictVariables boo
 
 		if !exists {
 			// Adhering to `strictVariables` (though error throwing is a future step)
-			if strictVariables {
-				// For now, returning an error message, but this should propagate an error
+			if engineConfig.StrictVariables {
 				return fmt.Sprintf("[ERROR: Variable «%s» not found]", variablePart)
 			}
 
@@ -217,46 +233,65 @@ func lexVariables(input string, data map[string]interface{}, strictVariables boo
 			return ""
 		}
 
-		// If there are no filters, returning the value directly
-		if filterChainPart == "" {
-			return fmt.Sprintf("%v", initialValue)
-		}
-
-		// Processing the filter chain
+		// --- Filter Processing ---
 		currentValue := initialValue
 		filterExpressions := strings.Split(filterChainPart, "|")
 
-		for _, filterExpr := range filterExpressions {
-			filterExpr = strings.TrimSpace(filterExpr)
-			if filterExpr == "" {
-				continue
+		// If there are no filters, returning the value directly
+		if filterChainPart != "" {
+			for _, filterExpr := range filterExpressions {
+				filterExpr = strings.TrimSpace(filterExpr)
+
+				if filterExpr == "" {
+					continue
+				}
+
+				// Parsing the filter name and arguments
+				reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
+				filterMatches := reFilter.FindStringSubmatch(filterExpr)
+
+				if len(filterMatches) < 2 {
+					// This should not happen with a valid filter expression
+					continue
+				}
+
+				filterName := filterMatches[1]
+				var filterArgs []string
+
+				if len(filterMatches) > 2 && filterMatches[2] != "" {
+					// Splitting arguments by comma, but respecting quotes
+					// This is a simplified parser; a full implementation would be more complex
+					// Using the new robust argument parser
+					filterArgs = parseFilterArgs(filterMatches[2])
+				}
+
+				var err error
+				currentValue, err = filters.Apply(currentValue, filterName, filterArgs)
+				if err != nil {
+					// In a real application, you might want to handle this error more gracefully
+					return fmt.Sprintf("[ERROR: %s]", err.Error())
+				}
 			}
+		}
 
-			// Parsing the filter name and arguments
-			reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
-			filterMatches := reFilter.FindStringSubmatch(filterExpr)
-
-			if len(filterMatches) < 2 {
-				// This should not happen with a valid filter expression
-				continue
+		// --- Auto-escaping Logic ---
+		shouldEscape := engineConfig.AutoEscaping
+		if len(filterExpressions) > 0 {
+			lastFilter := strings.TrimSpace(filterExpressions[len(filterExpressions)-1])
+			if strings.HasPrefix(lastFilter, "raw") || strings.HasPrefix(lastFilter, "escape") {
+				shouldEscape = false
 			}
+		}
+		if isLiteral {
+			shouldEscape = false
+		}
 
-			filterName := filterMatches[1]
-			var filterArgs []string
-
-			if len(filterMatches) > 2 && filterMatches[2] != "" {
-				// Splitting arguments by comma, but respecting quotes
-				// This is a simplified parser; a full implementation would be more complex
-				// Using the new robust argument parser
-				filterArgs = parseFilterArgs(filterMatches[2])
-			}
-
-			var err error
-			currentValue, err = filters.Apply(currentValue, filterName, filterArgs)
+		if shouldEscape {
+			escapedValue, err := filters.Apply(currentValue, "escape", []string{engineConfig.DefaultEscapingStrategy})
 			if err != nil {
-				// In a real application, you might want to handle this error more gracefully
 				return fmt.Sprintf("[ERROR: %s]", err.Error())
 			}
+			currentValue = escapedValue
 		}
 
 		return fmt.Sprintf("%v", currentValue)
@@ -272,6 +307,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 		return val, true
 	}
 
+	// Splitting the path by the dot operator for the initial segmentation
 	// 01. Splitting the `path` by `.` to navigate nested maps
 	// 02. Splitting the `path` by the dot operator for initial segmentation
 	// A path like `user.Profile.URL` becomes ["user", "Profile", "URL"]

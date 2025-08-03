@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 // The `runTest` function encapsulates the logic for running a single template test
@@ -69,7 +70,7 @@ func main() {
 	userContext["colors"] = []string{"Yellow", "Purple"}
 	runTest(engine, "views/test_block_statements_delimiter.peb", userContext, "Block Statements - Regular User")
 
-	// --- New Tests for `views/test_attributes.peb` ---
+	// --- Tests for `views/test_attributes.peb` ---
 	attributeContext := make(map[string]interface{})
 	attributeContext["user"] = User{
 		Name: "Benozzo",
@@ -85,6 +86,14 @@ func main() {
 	attributeContext["colors"] = []string{"Orange", "Cyan", "Magenta"}
 	attributeContext["nilObject"] = nil
 	runTest(engine, "views/test_attributes.peb", attributeContext, "Attribute, Map, and Slice Access")
+
+	// --- Test for `views/test_filters.peb` ---
+	filterContext := make(map[string]interface{})
+	birthdate, _ := time.Parse("2006-01-02", "1990-05-15")
+	filterContext["birthday"] = birthdate
+	filterContext["username"] = "Benozzo"
+	filterContext["nilVar"] = nil
+	runTest(engine, "views/test_filters.peb", filterContext, "Template Filters")
 
 	fmt.Println("---------------------------------")
 	fmt.Println("All test cases have been executed.")

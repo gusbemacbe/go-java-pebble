@@ -13,14 +13,26 @@ type PebbleEngine struct {
 	// If it is set to `false`, it renders an empty string
 	// If it is set to `true`, it should return an error (future implementation)
 	StrictVariables bool
+	// The `AutoEscaping` field enables or disables automatic escaping of print expressions
+	AutoEscaping bool
+	// The `DefaultEscapingStrategy` sets the default strategy for the `escape` filter
+	DefaultEscapingStrategy string
 }
 
 // The `NewEngine` function is a constructor for the PebbleEngine
 func NewEngine() *PebbleEngine {
-	// By default, StrictVariables is `false` to match Pebble's default behavior
+	// Setting the default values as per the Pebble documentation
 	return &PebbleEngine{
-		StrictVariables: false,
+		StrictVariables:         false,
+		AutoEscaping:            true,
+		DefaultEscapingStrategy: "html",
 	}
+}
+
+// The `SetAutoEscaping` is a builder method to configure auto-escaping
+func (e *PebbleEngine) SetAutoEscaping(auto bool) *PebbleEngine {
+	e.AutoEscaping = auto
+	return e
 }
 
 // The `PebbleTemplate` struct represents a compiled Pebble template
@@ -44,9 +56,16 @@ func (engine *PebbleEngine) GetTemplate(path string) (*PebbleTemplate, error) {
 
 // The `Evaluate` method processes the template with the given context and writes the output to a writer
 func (template *PebbleTemplate) Evaluate(writer io.Writer, context map[string]interface{}) error {
+	// Creating the configuration object to pass to the lexer
+	config := lexers.EngineConfig{
+		StrictVariables:         template.engine.StrictVariables,
+		AutoEscaping:            template.engine.AutoEscaping,
+		DefaultEscapingStrategy: template.engine.DefaultEscapingStrategy,
+	}
+
 	// Using the lexer to replace the placeholders with the actual data
 	// Passing the engine’s configuration to the lexer
-	output := lexers.Lex(template.content, context, template.engine.StrictVariables)
+	output := lexers.Lex(template.content, context, config)
 	_, err := writer.Write([]byte(output))
 	return err
 }

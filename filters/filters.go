@@ -3,6 +3,8 @@ package filters
 import (
 	"encoding/base64"
 	"fmt"
+	"html"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -16,20 +18,61 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 	case "abbreviate":
 		return filterAbbreviate(input, args)
 	case "base64decode":
-		return filterBase64Decode(input, args)
+		return filterBase64Decode(input, nil)
 	case "base64encode":
-		return filterBase64Encode(input, args)
+		return filterBase64Encode(input, nil)
 	case "capitalize", "capitalise":
-		return filterCapitalize(input, args)
+		return filterCapitalize(input, nil)
 	case "date":
 		return filterDate(input, args)
 	case "default":
 		// The `default` filter is handled specially in the lexer and does not need a case here
-		return nil, fmt.Errorf("«the ‘default' filter should be handled by the lexer»")
+		return nil, fmt.Errorf("«the ‘default’ filter should be handled by the lexer»")
+	case "escape":
+		return filterEscape(input, args)
+	case "raw":
+		// The `raw` filter does nothing but signal the lexer; it returns the input unchanged
+		return input, nil
 	case "upper":
-		return filterUpper(input, args)
+		return filterUpper(input, nil)
 	default:
-		return nil, fmt.Errorf("«filter ‘%s’ not found»", filterName)
+		return nil, fmt.Errorf("«filter '%s' not found»", filterName)
+	}
+}
+
+// The `filterEscape` function escapes a string based on the given strategy
+func filterEscape(input interface{}, args []string) (string, error) {
+	str := fmt.Sprintf("%v", input)
+	strategy := "html" // Defaulting to the `html` strategy
+
+	if len(args) > 0 {
+		strategy = args[0]
+	}
+
+	switch strategy {
+	case "html":
+		return html.EscapeString(str), nil
+	case "js":
+		// A basic JavaScript string escaper
+		return strings.NewReplacer(
+			`\`, `\\`,
+			`'`, `\'`,
+			`"`, `\"`,
+			"\n", `\n`,
+			"\r", `\r`,
+			"/", `\/`,
+		).Replace(str), nil
+	case "css":
+		// A basic CSS string escaper
+		return strings.NewReplacer(
+			`\`, `\\`,
+			`"`, `\"`,
+			`'`, `\'`,
+		).Replace(str), nil
+	case "url_param":
+		return url.QueryEscape(str), nil
+	default:
+		return "", fmt.Errorf("«unknown escaping strategy ‘%s’»", strategy)
 	}
 }
 

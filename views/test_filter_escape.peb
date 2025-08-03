@@ -1,0 +1,16 @@
+## Manual Escaping (Auto-escaping Disabled)
+HTML: {{ dangerousHTML | escape }}
+JS: {{ dangerousJS | escape("js") }}
+
+---
+
+## Auto-escaping Enabled (Default Behavior)
+HTML should be escaped: {{ dangerousHTML }}
+JS should be escaped (using default 'html' strategy): {{ dangerousJS }}
+
+---
+
+## Bypassing Auto-escaping
+Using the `raw` filter: {{ dangerousHTML | raw }}
+A string literal should not be escaped: {{ "<strong>Hello</strong>" }}
+`raw` not as the last filter (should be escaped): {{ dangerousHTML | raw | upper }}
