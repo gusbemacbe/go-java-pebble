@@ -73,7 +73,7 @@ func (t *PebbleTemplate) GetBlock(name string) string {
 	return t.blocks[name]
 }
 
-// The `Blocks` method is a public accessor for a template's blocks map
+// The `Blocks` method is a public accessor for the template's entire block map
 func (t *PebbleTemplate) Blocks() map[string]string {
 	return t.blocks
 }
@@ -147,6 +147,8 @@ func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map
 	}
 
 	// The lexer needs access to the template hierarchy to handle the `parent()` function
+	// `Current` is the template whose content is being rendered
+	// `Leaf` is the final child in the inheritance chain, whose blocks take precedence
 	state := &lexers.TemplateState{
 		Current: template,
 		Leaf:    leaf,
@@ -156,6 +158,7 @@ func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map
 	// Passing the engine’s configuration to the lexer
 	output := lexers.Lex(template.content, context, config, state)
 	_, err := writer.Write([]byte(output))
+
 	return err
 }
 

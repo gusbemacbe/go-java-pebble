@@ -81,7 +81,6 @@ func lexTags(input string, data map[string]interface{}, engineConfig EngineConfi
 				Leaf:             state.Leaf,
 				currentBlockName: blockName,
 			}
-
 			// Recursively rendering the child's block content
 			return Lex(overrideContent, data, engineConfig, childState)
 		}
@@ -337,6 +336,7 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 			for i := start; i <= end; i++ {
 				rangeSlice = append(rangeSlice, i)
 			}
+
 			collection = rangeSlice
 			exists = true
 		} else if len(funcMatches) > 0 {
@@ -380,7 +380,6 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 				// Otherwise, resolving it from the context
 				collection, exists = getValueFromContext(variablePart, data)
 			}
-
 			// If the collection does not exist, the loop renders nothing
 			// Applying the filter chain to the collection, if one exists
 			if exists && filterChainPart != "" {
@@ -459,14 +458,12 @@ func parseFilterArgs(argString string) []string {
 			if !inDoubleQuotes {
 				inSingleQuotes = !inSingleQuotes
 			}
-
 			// Retaining the character for the builder
 			currentArg.WriteRune(r)
 		case '"':
 			if !inSingleQuotes {
 				inDoubleQuotes = !inDoubleQuotes
 			}
-
 			// Retaining the character for the builder
 			currentArg.WriteRune(r)
 		case ',':
@@ -481,7 +478,6 @@ func parseFilterArgs(argString string) []string {
 			currentArg.WriteRune(r)
 		}
 	}
-
 	// Adding the final argument
 	args = append(args, strings.TrimSpace(currentArg.String()))
 
