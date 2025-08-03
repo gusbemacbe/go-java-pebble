@@ -17,6 +17,8 @@ type PebbleEngine struct {
 	AutoEscaping bool
 	// The `DefaultEscapingStrategy` sets the default strategy for the `escape` filter
 	DefaultEscapingStrategy string
+	// The `DefaultLocale` sets the default locale for the `i18n` function
+	DefaultLocale string
 }
 
 // The `NewEngine` function is a constructor for the PebbleEngine
@@ -26,12 +28,19 @@ func NewEngine() *PebbleEngine {
 		StrictVariables:         false,
 		AutoEscaping:            true,
 		DefaultEscapingStrategy: "html",
+		DefaultLocale:           "", // Defaults to the system's language if not set
 	}
 }
 
 // The `SetAutoEscaping` is a builder method to configure auto-escaping
 func (e *PebbleEngine) SetAutoEscaping(auto bool) *PebbleEngine {
 	e.AutoEscaping = auto
+	return e
+}
+
+// The `SetDefaultLocale` is a builder method to configure the default locale
+func (e *PebbleEngine) SetDefaultLocale(locale string) *PebbleEngine {
+	e.DefaultLocale = locale
 	return e
 }
 
@@ -55,12 +64,13 @@ func (engine *PebbleEngine) GetTemplate(path string) (*PebbleTemplate, error) {
 }
 
 // The `Evaluate` method processes the template with the given context and writes the output to a writer
-func (template *PebbleTemplate) Evaluate(writer io.Writer, context map[string]interface{}) error {
+func (template *PebbleTemplate) Evaluate(writer io.Writer, context map[string]interface{}, locale string) error {
 	// Creating the configuration object to pass to the lexer
 	config := lexers.EngineConfig{
 		StrictVariables:         template.engine.StrictVariables,
 		AutoEscaping:            template.engine.AutoEscaping,
 		DefaultEscapingStrategy: template.engine.DefaultEscapingStrategy,
+		Locale:                  locale,
 	}
 
 	// Using the lexer to replace the placeholders with the actual data
@@ -71,9 +81,16 @@ func (template *PebbleTemplate) Evaluate(writer io.Writer, context map[string]in
 }
 
 // The `EvaluateAndGetResult` method is a convenience function that evaluates a template and returns the result as a string
-func (template *PebbleTemplate) EvaluateAndGetResult(context map[string]interface{}) (string, error) {
+func (template *PebbleTemplate) EvaluateAndGetResult(context map[string]interface{}, locale string) (string, error) {
 	var writer bytes.Buffer
-	err := template.Evaluate(&writer, context)
+	// Using the default locale if a specific one is not provided
+	evalLocale := template.engine.DefaultLocale
+
+	if locale != "" {
+		evalLocale = locale
+	}
+
+	err := template.Evaluate(&writer, context, evalLocale)
 
 	if err != nil {
 		return "", err

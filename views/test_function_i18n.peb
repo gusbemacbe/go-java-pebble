@@ -1,0 +1,3 @@
+Default locale greeting: {{ i18n("messages", "greeting") }}
+Spanish locale farewell: {{ i18n("messages", "farewell") }}
+Greeting with a name: {{ i18n("messages", "greeting.someone", "Jacob") }}

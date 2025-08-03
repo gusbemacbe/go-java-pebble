@@ -3,50 +3,48 @@ package lexers
 import (
 	"fmt"
 	"go-java-pebble/filters"
+	"go-java-pebble/functions"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-// The EngineConfig struct passes down engine-wide settings to the lexer
+// The `EngineConfig` struct passes down ethe ngine-wide settings to the lexer
 type EngineConfig struct {
 	StrictVariables         bool
 	AutoEscaping            bool
 	DefaultEscapingStrategy string
+	Locale                  string
 }
 
-// The `TemplateState` struct holds state specific to a single template rendering,
-// such as the content of declared blocks.
+// The `TemplateState` struct holds state specific to a single template rendering, such as the content of declared blocks.
 type TemplateState struct {
 	blocks map[string]string
 }
 
-// The `pathSegmentRegex` is used to tokenize an access path like `user.profile["url"]`
+// The `pathSegmentRegex` is used to tokenise an access path like `user.profile["url"]`
 var pathSegmentRegex = regexp.MustCompile(`(\w+)|\["([^"]+)"\]|\[(\d+)\]`)
 
-// The `Lex` function performs lexical analysis and replacement of Pebble expressions
-// The order of operations is critical: tags, then functions, then variables
+// The `Lex` function performs rge lexical analysis and replacement of the Pebble expressions.
+// The order of operations is critical.
 func Lex(input string, data map[string]interface{}, engineConfig EngineConfig) string {
-	// Initializing the state for this render
+	// Initializing the state for this render. This is a pointer, so it can be passed down and modified by the tag parser.
 	state := &TemplateState{
 		blocks: make(map[string]string),
 	}
 
 	// 1. First pass: Process tags like `{% block %}` and `{% flush %}`.
-	//    The `lexTags` function will find all `block` declarations, store their content in the `state`, and remove the tags from the output.
+	//    The `lexTags` function will find all `block` declarations, store their content in the `state`, and render the block in place the first time.
 	output := lexTags(input, state)
 
-	// 2. Second pass: Process functions like `{{ block() }}`.
-	//    This pass will replace function calls with their appropriate content.
-	output = lexFunctions(output, data, engineConfig, state)
-
-	// 3. Third pass: Process standard `if` and `for` blocks.
+	// 2. Second pass: Process structural blocks like `{% if %}` and `{% for %}`.
+	//    These functions are recursive and will correctly handle nested structures.
 	output = lexIf(output, data, engineConfig)
 	output = lexFor(output, data, engineConfig)
 
-	// 4. Final pass: Process variable expressions like `{{ user.name }}`.
-	output = lexVariables(output, data, engineConfig)
+	// 3. Final pass: Process all `{{ ... }}` expressions, including variables, filters, and function calls. This happens last, after the loops and conditionals have been resolved.
+	output = lexExpressions(output, data, engineConfig, state)
 
 	return output
 }
@@ -56,52 +54,164 @@ func lexTags(input string, state *TemplateState) string {
 	// The regular expression to find `{% block "name" %}...{% endblock %}`
 	reBlock := regexp.MustCompile(`(?s){%\s*block\s+"([^"]+)"\s*%}(.*?){%\s*endblock\s*%}`)
 
-	// Finding all block definitions, storing their content, and removing them
+	// Finding all block definitions, storing their content, and replacing the tag with the content
 	output := reBlock.ReplaceAllStringFunc(input, func(match string) string {
 		submatches := reBlock.FindStringSubmatch(match)
 		blockName := submatches[1]
 		blockContent := submatches[2]
 
-		// Storing the captured content in our state map
+		// Storing the captured content in our state map for later use by the `block()` function
 		state.blocks[blockName] = blockContent
 
 		// Returning the content so it is rendered the first time in its original location
 		return blockContent
 	})
 
-	// Regex to find and simply remove `{% flush %}` tags, as they have no effect in our in-memory model
+	// The regular expression to find and simply remove `{% flush %}` tags, as they have no effect in our in-memory model
 	reFlush := regexp.MustCompile(`(?s){%\s*flush\s*%}`)
 	output = reFlush.ReplaceAllString(output, "")
 
 	return output
 }
 
-// The `lexFunctions` function handles the processing of functions like `{{ block() }}`
-func lexFunctions(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
-	// Regex to find `{{ block("name") }}`
-	reBlockFunc := regexp.MustCompile(`{{\s*block\s*\("([^"]+)"\)\s*}}`)
+// The `lexExpressions` function is the unified processor for all `{{ ... }}` expressions
+func lexExpressions(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
+	re := regexp.MustCompile(`{{\s*(.*?)\s*}}`)
 
-	output := reBlockFunc.ReplaceAllStringFunc(input, func(match string) string {
-		submatches := reBlockFunc.FindStringSubmatch(match)
-		blockName := submatches[1]
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		fullExpression := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(match, "{{"), "}}"))
 
-		// Retrieving the stored block content from our state
-		if content, ok := state.blocks[blockName]; ok {
-			return content
+		// --- Function Call Parsing ---
+		// This regular expression looks for a word followed by parentheses, capturing the name and arguments
+		reFunc := regexp.MustCompile(`^(\w+)\((.*)\)$`)
+		funcMatches := reFunc.FindStringSubmatch(fullExpression)
+
+		if len(funcMatches) > 0 {
+			functionName := funcMatches[1]
+			argString := funcMatches[2]
+
+			// Special handling for the `block` function, which is lexer-aware
+			if functionName == "block" {
+				arg := strings.Trim(argString, ` "`)
+
+				if content, ok := state.blocks[arg]; ok {
+					return content
+				}
+
+				return ""
+			}
+
+			// Generic function handling
+			context := functions.EvaluationContext{
+				Locale: engineConfig.Locale,
+				Data:   data,
+			}
+
+			args := parseFunctionArgs(argString, data)
+
+			result, err := functions.Apply(functionName, context, args)
+
+			if err != nil {
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
+			}
+
+			return fmt.Sprintf("%v", result)
 		}
 
-		return ""
-	})
+		// --- Variable and Filter Parsing ---
+		parts := strings.SplitN(fullExpression, "|", 2)
+		variablePart := strings.TrimSpace(parts[0])
+		var filterChainPart string
 
-	return output
+		if len(parts) > 1 {
+			filterChainPart = strings.TrimSpace(parts[1])
+		}
+
+		var initialValue interface{}
+		var exists bool
+
+		isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) || (strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
+
+		if isStringLiteral {
+			initialValue = variablePart[1 : len(variablePart)-1]
+			exists = true
+		} else if num, err := strconv.ParseFloat(variablePart, 64); err == nil {
+			initialValue = num
+			exists = true
+		} else {
+			initialValue, exists = getValueFromContext(variablePart, data)
+		}
+
+		reDefault := regexp.MustCompile(`default\s*\(([^)]+)\)`)
+
+		if reDefault.MatchString(filterChainPart) {
+			isEmpty := !exists || initialValue == nil
+
+			if s, ok := initialValue.(string); ok && s == "" {
+				isEmpty = true
+			}
+			if isEmpty {
+				matches := reDefault.FindStringSubmatch(filterChainPart)
+				defaultValue := strings.Trim(matches[1], `"'`)
+				return defaultValue
+			} else {
+				filterChainPart = reDefault.ReplaceAllString(filterChainPart, "")
+			}
+		}
+
+		if !exists {
+			if engineConfig.StrictVariables {
+				return fmt.Sprintf("[ERROR: Variable «%s» not found]", variablePart)
+			}
+			return ""
+		}
+
+		if initialValue == nil {
+			return ""
+		}
+
+		currentValue := initialValue
+
+		if filterChainPart != "" {
+			var err error
+			currentValue, err = applyFilterChain(initialValue, filterChainPart, data)
+
+			if err != nil {
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
+			}
+		}
+
+		filterExpressions := strings.Split(filterChainPart, "|")
+		shouldEscape := engineConfig.AutoEscaping
+
+		if len(filterExpressions) > 0 {
+			lastFilter := strings.TrimSpace(filterExpressions[len(filterExpressions)-1])
+
+			if strings.HasPrefix(lastFilter, "raw") || strings.HasPrefix(lastFilter, "escape") {
+				shouldEscape = false
+			}
+		}
+
+		if isStringLiteral {
+			shouldEscape = false
+		}
+
+		if shouldEscape {
+			escapedValue, err := filters.Apply(currentValue, "escape", []interface{}{engineConfig.DefaultEscapingStrategy})
+
+			if err != nil {
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
+			}
+
+			currentValue = escapedValue
+		}
+
+		return fmt.Sprintf("%v", currentValue)
+	})
 }
 
-// The lexIf function can:
-// - find and process `{% if ... %}` blocks
-// - passe the `strictVariables` flag down to handle the missing variables
+// The `lexIf` function processes the `if/else` blocks
 func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig) string {
-	// Defining the regular expression to find `if-else-endif` blocks
-	// The `(?s)` flag allows `.` to match newline characters
 	re := regexp.MustCompile(`(?s){%\s*if\s+(.*?)\s*%}(.*?)(?:{%\s*else\s*%}(.*?))?{%\s*endif\s*%}`)
 
 	return re.ReplaceAllStringFunc(input, func(match string) string {
@@ -134,16 +244,14 @@ func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig)
 		}
 
 		if conditionResult {
-			return ifBlock
+			return Lex(ifBlock, data, engineConfig)
 		}
 
-		return elseBlock
+		return Lex(elseBlock, data, engineConfig)
 	})
 }
 
-// The `lexFor` function can:
-// - find and process `{% for ... %}` loops
-// - passe the `strictVariables` flag down
+// The `lexFor` function processes `for` loops, including those with filters
 func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// Defining the regular expression to find `for-endfor` blocks
 	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(.*?)\s*%}(.*?){%\s*endfor\s*%}`)
@@ -167,8 +275,7 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 		var exists bool
 
 		// Checking if the variable part is a string literal
-		isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
-			(strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
+		isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) || (strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
 
 		if isStringLiteral {
 			collection = variablePart[1 : len(variablePart)-1]
@@ -185,14 +292,12 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 
 		// Applying the filter chain to the collection, if one exists
 		if filterChainPart != "" {
-			currentValue := collection
 			var err error
-			currentValue, err = applyFilterChain(currentValue, filterChainPart, data)
+			collection, err = applyFilterChain(collection, filterChainPart, data)
+
 			if err != nil {
 				return fmt.Sprintf("[ERROR: %s]", err.Error())
 			}
-			// The final result of the filter chain is our new collection
-			collection = currentValue
 		}
 
 		val := reflect.ValueOf(collection)
@@ -222,7 +327,7 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 	})
 }
 
-// The `parseFilterArgs` function intelligently splits the arguments, respecting the quoted strings
+// The `parseFilterArgs` function intelligently splits arguments for filters
 func parseFilterArgs(argString string) []string {
 	var args []string
 	var currentArg strings.Builder
@@ -298,8 +403,7 @@ func parseReplaceMap(argString string, data map[string]interface{}) (map[string]
 
 		var value string
 		// Checking if the value is a string literal or a context variable
-		if (strings.HasPrefix(valueStr, `"`) && strings.HasSuffix(valueStr, `"`)) ||
-			(strings.HasPrefix(valueStr, `'`) && strings.HasSuffix(valueStr, `'`)) {
+		if (strings.HasPrefix(valueStr, `"`) && strings.HasSuffix(valueStr, `"`)) || (strings.HasPrefix(valueStr, `'`) && strings.HasSuffix(valueStr, `'`)) {
 			value = valueStr[1 : len(valueStr)-1]
 		} else {
 			if val, ok := getValueFromContext(valueStr, data); ok {
@@ -320,6 +424,7 @@ func applyFilterChain(value interface{}, chain string, data map[string]interface
 
 	for _, filterExpr := range filterExpressions {
 		filterExpr = strings.TrimSpace(filterExpr)
+
 		if filterExpr == "" {
 			continue
 		}
@@ -350,6 +455,7 @@ func applyFilterChain(value interface{}, chain string, data map[string]interface
 			}
 
 			args = append(args, replacements)
+
 		} else if argString != "" {
 			// Other filters take a simple list of strings
 			strArgs := parseFilterArgs(argString)
@@ -369,131 +475,27 @@ func applyFilterChain(value interface{}, chain string, data map[string]interface
 	return currentValue, nil
 }
 
-// The lexVariables function can
-// - replace the simple `{{ variable }}` placeholders,
-// - passe the `strictVariables` flag to the resolver
-// - parse and apply the filters, including the auto-escaping and numeric literals
-func lexVariables(input string, data map[string]interface{}, engineConfig EngineConfig) string {
-	// This regex now captures the main variable/literal and the filter chain
-	re := regexp.MustCompile(`{{\s*(.*?)\s*}}`)
+// The `parseFunctionArgs` function parses arguments for function calls
+func parseFunctionArgs(argString string, data map[string]interface{}) []interface{} {
+	var args []interface{}
+	strArgs := parseFilterArgs(argString)
 
-	return re.ReplaceAllStringFunc(input, func(match string) string {
-		fullExpression := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(match, "{{"), "}}"))
-
-		// Splitting the expression into the base variable and the filter chain
-		parts := strings.SplitN(fullExpression, "|", 2)
-		variablePart := strings.TrimSpace(parts[0])
-
-		var filterChainPart string
-
-		if len(parts) > 1 {
-			filterChainPart = strings.TrimSpace(parts[1])
-		}
-
-		var initialValue interface{}
-		var exists bool
-
-		// Checking if the variable part is a string literal
-		isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
-			(strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
-
-		if isStringLiteral {
-			initialValue = variablePart[1 : len(variablePart)-1]
-			exists = true
+	for _, arg := range strArgs {
+		if val, ok := getValueFromContext(arg, data); ok {
+			args = append(args, val)
 		} else {
-			// Checking if the variable part is a numeric literal
-			if num, err := strconv.ParseFloat(variablePart, 64); err == nil {
-				initialValue = num
-				exists = true
-			} else {
-				// Otherwise, resolving it from the context
-				initialValue, exists = getValueFromContext(variablePart, data)
-			}
+			args = append(args, arg)
 		}
+	}
 
-		// Applying the `default` filter logic early if it is present
-		// Creating a regular expression to specifically find and handle the `default` filter
-		reDefault := regexp.MustCompile(`default\s*\(([^)]+)\)`)
-
-		if reDefault.MatchString(filterChainPart) {
-			// Checking if the main variable is empty
-			isEmpty := !exists || initialValue == nil
-
-			if s, ok := initialValue.(string); ok && s == "" {
-				isEmpty = true
-			}
-
-			if isEmpty {
-				// If it is empty, we extract the default value and return it immediately
-				matches := reDefault.FindStringSubmatch(filterChainPart)
-				defaultValue := strings.Trim(matches[1], `"'`)
-				return defaultValue
-			} else {
-				// If the variable is not empty, we remove the `default` filter from the chain and proceed
-				filterChainPart = reDefault.ReplaceAllString(filterChainPart, "")
-			}
-		}
-
-		if !exists {
-			// Adhering to `strictVariables` (though error throwing is a future step)
-			if engineConfig.StrictVariables {
-				return fmt.Sprintf("[ERROR: Variable «%s» not found]", variablePart)
-			}
-
-			return ""
-		}
-
-		// Checking for nil before formatting to ensure the null safety
-		if initialValue == nil {
-			return ""
-		}
-
-		// --- Filter Processing ---
-		currentValue := initialValue
-		// If there are no filters, returning the value directly
-		if filterChainPart != "" {
-			var err error
-			currentValue, err = applyFilterChain(initialValue, filterChainPart, data)
-
-			if err != nil {
-				return fmt.Sprintf("[ERROR: %s]", err.Error())
-			}
-		}
-
-		// --- Auto-escaping Logic ---
-		filterExpressions := strings.Split(filterChainPart, "|")
-		shouldEscape := engineConfig.AutoEscaping
-
-		if len(filterExpressions) > 0 {
-			lastFilter := strings.TrimSpace(filterExpressions[len(filterExpressions)-1])
-
-			if strings.HasPrefix(lastFilter, "raw") || strings.HasPrefix(lastFilter, "escape") {
-				shouldEscape = false
-			}
-		}
-
-		if isStringLiteral {
-			shouldEscape = false
-		}
-
-		if shouldEscape {
-			escapedValue, err := filters.Apply(currentValue, "escape", []interface{}{engineConfig.DefaultEscapingStrategy})
-			if err != nil {
-				return fmt.Sprintf("[ERROR: %s]", err.Error())
-			}
-
-			currentValue = escapedValue
-		}
-
-		return fmt.Sprintf("%v", currentValue)
-	})
+	return args
 }
 
 // The `getValueFromContext` function can:
 // - retrieve a value from the context map, supporting the dot notation for nested maps;
 // - parse complex paths involving the dot and the subscript notation;
 func getValueFromContext(path string, data map[string]interface{}) (interface{}, bool) {
-	// Handling the case where the path itself is a key in the top-level map
+	// Handling the case where the path `itself` is a key in the top-level map
 	if val, ok := data[path]; ok {
 		return val, true
 	}
@@ -511,6 +513,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 		// Handling cases like `colors[0]` or `settings["font-family"]`
 		// which may not be separated by a dot
 		subParts := pathSegmentRegex.FindAllStringSubmatch(part, -1)
+
 		for _, subPart := range subParts {
 			// `reflect.ValueOf` is used to inspect the variable `currentVal`
 			v := reflect.ValueOf(currentVal)
@@ -520,7 +523,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 				v = v.Elem()
 			}
 
-			// Returning nil if the object is invalid (e.g., a nil pointer)
+			// Returning nil if the object is invalid (for example, a nil pointer)
 			if !v.IsValid() {
 				return nil, false
 			}
@@ -576,5 +579,6 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 			}
 		}
 	}
+
 	return currentVal, true
 }

@@ -14,14 +14,14 @@ func runTest(engine *PebbleEngine, templatePath string, context map[string]inter
 	compiledTemplate, err := engine.GetTemplate(templatePath)
 
 	if err != nil {
-		log.Fatalf("«Error getting template '%s': %v»", templatePath, err)
+		log.Fatalf("«Error getting the template ‘%s’: %v»", templatePath, err)
 	}
 
-	// Evaluating the template with the provided context
-	output, err := compiledTemplate.EvaluateAndGetResult(context)
+	// Evaluating the template with the provided context, now passing the locale
+	output, err := compiledTemplate.EvaluateAndGetResult(context, "") // Using default locale
 
 	if err != nil {
-		log.Fatalf("«Error evaluating the template '%s': %v»", templatePath, err)
+		log.Fatalf("«Error evaluating the template ‘%s’: %v»", templatePath, err)
 	}
 
 	// Printing the final output
