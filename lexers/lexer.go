@@ -82,21 +82,64 @@ func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig)
 // - passe the `strictVariables` flag down
 func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// Defining the regular expression to find `for-endfor` blocks
-	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(\w+)\s*%}(.*?){%\s*endfor\s*%}`)
+	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(.*?)\s*%}(.*?){%\s*endfor\s*%}`)
 
 	return re.ReplaceAllStringFunc(input, func(match string) string {
 		submatches := re.FindStringSubmatch(match)
 		loopVar := submatches[1]
-		collectionKey := submatches[2]
+		collectionExpression := strings.TrimSpace(submatches[2])
 		loopBody := submatches[3]
 
-		collection, exists := getValueFromContext(collectionKey, data)
-
-		if !exists {
-			return "" // If the collection does not exist, replacing the block with nothing
+		// Splitting the expression to separate the variable from the filter chain
+		parts := strings.SplitN(collectionExpression, "|", 2)
+		variablePart := strings.TrimSpace(parts[0])
+		var filterChainPart string
+		if len(parts) > 1 {
+			filterChainPart = strings.TrimSpace(parts[1])
 		}
 
-		// Using reflection to iterate over the collection, which could be a slice of any type
+		// Resolving the base collection from the context
+		collection, exists := getValueFromContext(variablePart, data)
+
+		if !exists {
+			// If the collection does not exist, the loop renders nothing
+			return ""
+		}
+
+		// Applying the filter chain to the collection, if one exists
+		if filterChainPart != "" {
+			filterExpressions := strings.Split(filterChainPart, "|")
+			currentValue := collection
+
+			for _, filterExpr := range filterExpressions {
+				filterExpr = strings.TrimSpace(filterExpr)
+				if filterExpr == "" {
+					continue
+				}
+
+				reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
+				filterMatches := reFilter.FindStringSubmatch(filterExpr)
+				if len(filterMatches) < 2 {
+					continue
+				}
+
+				filterName := filterMatches[1]
+				var filterArgs []string
+				if len(filterMatches) > 2 && filterMatches[2] != "" {
+					filterArgs = parseFilterArgs(filterMatches[2])
+				}
+
+				var err error
+				currentValue, err = filters.Apply(currentValue, filterName, filterArgs)
+				if err != nil {
+					return fmt.Sprintf("[ERROR: %s]", err.Error())
+				}
+			}
+
+			// The final result of the filter chain is our new collection
+			collection = currentValue
+		}
+
 		val := reflect.ValueOf(collection)
 
 		if val.Kind() != reflect.Slice {

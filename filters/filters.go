@@ -6,6 +6,7 @@ import (
 	"html"
 	"net/url"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,12 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 	case "raw":
 		// The `raw` filter does nothing but signal the lexer; it returns the input unchanged
 		return input, nil
+	case "reverse":
+		return filterReverse(input, nil)
+	case "rsort":
+		return filterSort(input, []string{"reverse"})
+	case "sort":
+		return filterSort(input, nil)
 	case "title":
 		return filterTitle(input, nil)
 	case "upper":
@@ -47,6 +54,75 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 	default:
 		return nil, fmt.Errorf("«filter '%s' not found»", filterName)
 	}
+}
+
+// The `sortSlice` function provides a generic sorting mechanism for slices of basic types
+func sortSlice(slice interface{}, reverse bool) (interface{}, error) {
+	val := reflect.ValueOf(slice)
+
+	if val.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("«can only sort a slice»")
+	}
+
+	// Creating a new slice to hold the sorted data to avoid modifying the original
+	sortedSlice := reflect.MakeSlice(val.Type(), val.Len(), val.Len())
+	reflect.Copy(sortedSlice, val)
+	iSlice := sortedSlice.Interface()
+
+	// Using type assertions to call the correct `sort` function
+	switch s := iSlice.(type) {
+	case []string:
+		if reverse {
+			sort.Sort(sort.Reverse(sort.StringSlice(s)))
+		} else {
+			sort.StringSlice(s).Sort()
+		}
+
+		return s, nil
+	case []int:
+		if reverse {
+			sort.Sort(sort.Reverse(sort.IntSlice(s)))
+		} else {
+			sort.IntSlice(s).Sort()
+		}
+
+		return s, nil
+	case []float64:
+		if reverse {
+			sort.Sort(sort.Reverse(sort.Float64Slice(s)))
+		} else {
+			sort.Float64Slice(s).Sort()
+		}
+
+		return s, nil
+	default:
+		return nil, fmt.Errorf("«unsupported slice type for sorting: %T»", iSlice)
+	}
+}
+
+// The `filterReverse` function reverses the order of items in a collection
+func filterReverse(input interface{}, _ []string) (interface{}, error) {
+	val := reflect.ValueOf(input)
+
+	if val.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("«the 'reverse' filter can only be applied to collections»")
+	}
+
+	len := val.Len()
+	reversedSlice := reflect.MakeSlice(val.Type(), len, len)
+
+	for i := 0; i < len; i++ {
+		reversedSlice.Index(i).Set(val.Index(len - 1 - i))
+	}
+
+	return reversedSlice.Interface(), nil
+}
+
+// The `filterSort` function sorts a collection
+func filterSort(input interface{}, args []string) (interface{}, error) {
+	reverse := len(args) > 0 && args[0] == "reverse"
+
+	return sortSlice(input, reverse)
 }
 
 // The `filterFirst` function returns the first item of a collection or character of a string

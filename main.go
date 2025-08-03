@@ -100,6 +100,14 @@ func main() {
 	escapeContext["dangerousHTML"] = "<div>"
 	runTest(engine.SetAutoEscaping(false), "views/test_filter_escape.peb", escapeContext, "Manual Escaping")
 
+	// --- Tests for `first`, `last`, `lower`, `title` filters ---
+	miscFilterContext := make(map[string]interface{})
+	miscFilterContext["users"] = []string{"Alex", "Joe", "Bob"}
+	runTest(engine, "views/test_filter_first.peb", miscFilterContext, "First Filter")
+	runTest(engine, "views/test_filter_last.peb", miscFilterContext, "Last Filter")
+	runTest(engine, "views/test_filter_lower.peb", nil, "Lower Filter")
+	runTest(engine, "views/test_filter_title.peb", nil, "Title Filter")
+
 	fmt.Println("---------------------------------")
 	fmt.Println("All test cases have been executed.")
 }
