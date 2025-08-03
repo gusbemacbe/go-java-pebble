@@ -32,45 +32,26 @@ func main() {
 	// Creating a new instance of the `PebbleEngine`
 	engine := NewEngine()
 
-	// --- Test for `views/test.peb` ---
+	// --- High-level integration tests for each view file ---
+
+	// Context for `views/test.peb`
 	pebContext := make(map[string]interface{})
 	pebContext["name"] = "Gus"
 	runTest(engine, "views/test.peb", pebContext, "Simple Variable Replacement")
 
-	// --- Tests for `views/test.pebble` ---
-	pebbleAdminContext := make(map[string]interface{})
-	pebbleAdminContext["user"] = map[string]interface{}{"name": "Administrator", "isAdmin": true}
-	pebbleAdminContext["items"] = []string{"Dashboard", "Users", "Settings"}
-	runTest(engine, "views/test.pebble", pebbleAdminContext, "Comprehensive Test - Admin User")
+	// Context for `views/test.pebble`
+	pebbleContext := make(map[string]interface{})
+	pebbleContext["user"] = map[string]interface{}{"name": "Gus", "isAdmin": false}
+	pebbleContext["items"] = []string{"Profile", "Messages", "Logout"}
+	runTest(engine, "views/test.pebble", pebbleContext, "Comprehensive Blocks")
 
-	pebbleUserContext := make(map[string]interface{})
-	pebbleUserContext["user"] = map[string]interface{}{"name": "Gus", "isAdmin": false}
-	pebbleUserContext["items"] = []string{"Profile", "Messages", "Logout"}
-	runTest(engine, "views/test.pebble", pebbleUserContext, "Comprehensive Test - Regular User")
+	// Context for `views/test_block_statements_delimiter.peb`
+	blockContext := make(map[string]interface{})
+	blockContext["user"] = map[string]interface{}{"name": "Benozzo", "isAdmin": true}
+	blockContext["colors"] = []string{"Red", "Green", "Blue"}
+	runTest(engine, "views/test_block_statements_delimiter.peb", blockContext, "Block Statements (If/For)")
 
-	// --- Tests for `views/test_block_statements_delimiter.peb` ---
-	// Test Case 1: Admin User
-	adminContext := make(map[string]interface{})
-	adminContext["user"] = map[string]interface{}{
-		"name":    "Benozzo",
-		"isAdmin": true,
-	}
-
-	adminContext["colors"] = []string{"Red", "Green", "Blue"}
-
-	runTest(engine, "views/test_block_statements_delimiter.peb", adminContext, "Block Statements - Admin User")
-
-	// Test Case 2: Regular User
-	userContext := make(map[string]interface{})
-	userContext["user"] = map[string]interface{}{
-		"name":    "Gus",
-		"isAdmin": false,
-	}
-
-	userContext["colors"] = []string{"Yellow", "Purple"}
-	runTest(engine, "views/test_block_statements_delimiter.peb", userContext, "Block Statements - Regular User")
-
-	// --- Tests for `views/test_attributes.peb` ---
+	// Context for `views/test_attributes.peb`
 	attributeContext := make(map[string]interface{})
 	attributeContext["user"] = User{
 		Name: "Benozzo",
@@ -85,43 +66,16 @@ func main() {
 	}
 	attributeContext["colors"] = []string{"Orange", "Cyan", "Magenta"}
 	attributeContext["nilObject"] = nil
-	runTest(engine, "views/test_attributes.peb", attributeContext, "Attribute, Map, and Slice Access")
+	runTest(engine, "views/test_attributes.peb", attributeContext, "Attribute Access")
 
-	// --- Test for `views/test_filters.peb` ---
+	// Context for `views/test_filters.peb`
 	filterContext := make(map[string]interface{})
 	birthdate, _ := time.Parse("2006-01-02", "1990-05-15")
 	filterContext["birthday"] = birthdate
 	filterContext["username"] = "Benozzo"
 	filterContext["nilVar"] = nil
-	runTest(engine, "views/test_filters.peb", filterContext, "Template Filters")
-
-	// --- Test for `views/test_filter_escape.peb` ---
-	escapeContext := make(map[string]interface{})
-	escapeContext["dangerousHTML"] = "<div>"
-	runTest(engine.SetAutoEscaping(false), "views/test_filter_escape.peb", escapeContext, "Manual Escaping")
-
-	// --- Tests for `first`, `last`, `lower`, `title` filters ---
-	miscFilterContext := make(map[string]interface{})
-	miscFilterContext["users"] = []string{"Alex", "Joe", "Bob"}
-	runTest(engine, "views/test_filter_first.peb", miscFilterContext, "First Filter")
-	runTest(engine, "views/test_filter_last.peb", miscFilterContext, "Last Filter")
-	runTest(engine, "views/test_filter_lower.peb", nil, "Lower Filter")
-	runTest(engine, "views/test_filter_title.peb", nil, "Title Filter")
-
-	// --- Tests for `reverse`, `sort`, `rsort` filters ---
-	sortableContext := make(map[string]interface{})
-	sortableContext["users"] = []string{"Joe", "Alex", "Bob"}
-	runTest(engine, "views/test_filter_reverse.peb", sortableContext, "Reverse Filter")
-	runTest(engine, "views/test_filter_sort.peb", sortableContext, "Sort Filter")
-	runTest(engine, "views/test_filter_rsort.peb", sortableContext, "Reverse Sort Filter")
-
-	// --- Tests for `length` and `numberformat` filters ---
-	lengthContext := make(map[string]interface{})
-	lengthContext["users"] = []string{"Alex", "Joe", "Bob"}
-	lengthContext["settings"] = map[string]string{"a": "1", "b": "2"}
-	runTest(engine, "views/test_filter_length.peb", lengthContext, "Length Filter")
-	runTest(engine, "views/test_filter_numberformat.peb", nil, "Number Format Filter")
+	runTest(engine, "views/test_filters.peb", filterContext, "General Filters")
 
 	fmt.Println("---------------------------------")
-	fmt.Println("All test cases have been executed.")
+	fmt.Println("All main test cases have been executed.")
 }

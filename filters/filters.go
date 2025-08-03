@@ -1,7 +1,9 @@
 package filters
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"html"
 	"net/url"
@@ -51,6 +53,8 @@ func Apply(input interface{}, filterName string, args []interface{}) (interface{
 		return filterReverse(input, nil)
 	case "rsort":
 		return filterSort(input, []interface{}{"reverse"})
+	case "sha256":
+		return filterSha256(input, nil)
 	case "slice":
 		return filterSlice(input, args)
 	case "sort":
@@ -59,11 +63,27 @@ func Apply(input interface{}, filterName string, args []interface{}) (interface{
 		return filterSplit(input, args)
 	case "title":
 		return filterTitle(input, nil)
+	case "urlencode":
+		return filterUrlEncode(input, nil)
 	case "upper":
 		return filterUpper(input, nil)
 	default:
 		return nil, fmt.Errorf("«filter '%s' not found»", filterName)
 	}
+}
+
+// The `filterSha256` function calculates the SHA-256 hash of a string
+func filterSha256(input interface{}, _ []interface{}) (string, error) {
+	str := fmt.Sprintf("%v", input)
+	hasher := sha256.New()
+	hasher.Write([]byte(str))
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+// The `filterUrlEncode` function URL-encodes a string
+func filterUrlEncode(input interface{}, _ []interface{}) (string, error) {
+	str := fmt.Sprintf("%v", input)
+	return url.QueryEscape(str), nil
 }
 
 // The `filterReplace` function replaces placeholders in a string

@@ -1,0 +1,1 @@
+URLEncoded string: {{ "The string ü@foo-bar" | urlencode }}
