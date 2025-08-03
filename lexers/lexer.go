@@ -298,6 +298,7 @@ func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig,
 }
 
 // The `lexFor` function now recursively calls `Lex` to process the loop body
+// The `lexFor` function processes `for` loops, including those with filters and the range operator
 func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
 	// Defining the regular expression to find `for-endfor` blocks
 	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(.*?)\s*%}(.*?){%\s*endfor\s*%}`)
@@ -308,43 +309,90 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 		collectionExpression := strings.TrimSpace(submatches[2])
 		loopBody := submatches[3]
 
-		// Splitting the expression to separate the variable from the filter chain
-		parts := strings.SplitN(collectionExpression, "|", 2)
-
-		variablePart := strings.TrimSpace(parts[0])
-		var filterChainPart string
-
-		if len(parts) > 1 {
-			filterChainPart = strings.TrimSpace(parts[1])
-		}
-
 		var collection interface{}
 		var exists bool
 
-		// Checking if the variable part is a string literal
-		isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) || (strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
+		// --- Range Operator (`..`) Parsing ---
+		reRangeOp := regexp.MustCompile(`^(\w+|\d+)\.\.(\w+|\d+)$`)
+		rangeMatches := reRangeOp.FindStringSubmatch(collectionExpression)
 
-		if isStringLiteral {
-			collection = variablePart[1 : len(variablePart)-1]
+		// --- Function Call Parsing ---
+		reFunc := regexp.MustCompile(`^(\w+)\((.*)\)$`)
+		funcMatches := reFunc.FindStringSubmatch(collectionExpression)
+
+		if len(rangeMatches) > 0 {
+			startStr := rangeMatches[1]
+			endStr := rangeMatches[2]
+
+			start, err1 := resolveNumeric(startStr, data)
+			end, err2 := resolveNumeric(endStr, data)
+
+			if err1 != nil || err2 != nil {
+				return "[ERROR: range operator bounds must be numeric or resolvable variables]"
+			}
+
+			// Generating the slice for the range
+			var rangeSlice []int64
+			for i := start; i <= end; i++ {
+				rangeSlice = append(rangeSlice, i)
+			}
+			collection = rangeSlice
 			exists = true
-		} else {
-			// Otherwise, resolving it from the context
-			collection, exists = getValueFromContext(variablePart, data)
-		}
+		} else if len(funcMatches) > 0 {
+			// It is a function call like `range(0, 3)`
+			functionName := funcMatches[1]
+			argString := funcMatches[2]
 
-		if !exists {
-			// If the collection does not exist, the loop renders nothing
-			return ""
-		}
+			context := functions.EvaluationContext{
+				Locale: engineConfig.Locale,
+				Data:   data,
+			}
 
-		// Applying the filter chain to the collection, if one exists
-		if filterChainPart != "" {
-			var err error
-			collection, err = applyFilterChain(collection, filterChainPart, data)
+			args := parseFunctionArgs(argString, data)
+
+			result, err := functions.Apply(functionName, context, args)
 
 			if err != nil {
 				return fmt.Sprintf("[ERROR: %s]", err.Error())
 			}
+
+			collection = result
+			exists = true
+		} else {
+			// --- Standard Variable and Filter Chain Parsing ---
+			parts := strings.SplitN(collectionExpression, "|", 2)
+
+			variablePart := strings.TrimSpace(parts[0])
+			var filterChainPart string
+
+			if len(parts) > 1 {
+				filterChainPart = strings.TrimSpace(parts[1])
+			}
+
+			// Checking if the variable part is a string literal
+			isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) || (strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
+
+			if isStringLiteral {
+				collection = variablePart[1 : len(variablePart)-1]
+				exists = true
+			} else {
+				// Otherwise, resolving it from the context
+				collection, exists = getValueFromContext(variablePart, data)
+			}
+			// If the collection does not exist, the loop renders nothing
+			// Applying the filter chain to the collection, if one exists
+			if exists && filterChainPart != "" {
+				var err error
+				collection, err = applyFilterChain(collection, filterChainPart, data)
+
+				if err != nil {
+					return fmt.Sprintf("[ERROR: %s]", err.Error())
+				}
+			}
+		}
+
+		if !exists {
+			return ""
 		}
 
 		val := reflect.ValueOf(collection)
@@ -372,6 +420,28 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 
 		return result.String()
 	})
+}
+
+// The `resolveNumeric` is a helper function for the range operator
+func resolveNumeric(s string, data map[string]interface{}) (int64, error) {
+	// Attempting to parse as a literal integer first
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return i, nil
+	}
+
+	// If it fails, attempting to resolve as a variable from the context
+	if val, ok := getValueFromContext(s, data); ok {
+		// Converting the resolved variable to an int64
+		refVal := reflect.ValueOf(val)
+		switch refVal.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return refVal.Int(), nil
+		case reflect.Float32, reflect.Float64:
+			return int64(refVal.Float()), nil
+		}
+	}
+
+	return 0, fmt.Errorf("«could not resolve '%s' as a numeric value»", s)
 }
 
 // The `parseFilterArgs` function intelligently splits arguments, respecting quoted strings and named arguments

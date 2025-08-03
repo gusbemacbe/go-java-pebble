@@ -664,3 +664,23 @@ func TestTemplateInheritance(t *testing.T) {
 		t.Errorf("«Template inheritance failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
 	}
 }
+
+// The `TestRangeFunction` function validates the `range` function and `..` operator
+func TestRangeFunction(t *testing.T) {
+	t.Log("--- Running Test Case: «Range Function and Operator» ---")
+	engine := pebble.NewEngine()
+	template, _ := engine.GetTemplate("views/test_function_range.peb")
+	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
+
+	t.Logf("Rendered output:\n%s", output)
+
+	if !strings.Contains(output, "Simple range function: 0, 1, 2, 3,") {
+		t.Errorf("«The `range` function failed for the simple case»")
+	}
+	if !strings.Contains(output, "Range with step: 0, 2, 4, 6,") {
+		t.Errorf("«The `range` function failed with a step»")
+	}
+	if !strings.Contains(output, "Range operator: 0, 1, 2, 3,") {
+		t.Errorf("«The `..` range operator failed»")
+	}
+}

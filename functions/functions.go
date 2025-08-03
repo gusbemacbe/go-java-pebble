@@ -29,6 +29,8 @@ func Apply(functionName string, context EvaluationContext, args []interface{}) (
 	// The `parent` function is also a special case handled by the lexer
 	case "parent":
 		return nil, fmt.Errorf("«the 'parent' function is handled by the lexer»")
+	case "range":
+		return functionRange(context, args)
 	default:
 		return nil, fmt.Errorf("«function '%s' not found»", functionName)
 	}
@@ -54,7 +56,7 @@ func functionI18n(context EvaluationContext, args []interface{}) (string, error)
 }
 
 // The `functionMax` function returns the largest of its numerical arguments
-func functionMax(context EvaluationContext, args []interface{}) (interface{}, error) {
+func functionMax(_ EvaluationContext, args []interface{}) (interface{}, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("«the 'max' function requires at least one argument»")
 	}
@@ -94,7 +96,7 @@ func functionMax(context EvaluationContext, args []interface{}) (interface{}, er
 }
 
 // The `functionMin` function returns the smallest of its numerical arguments
-func functionMin(context EvaluationContext, args []interface{}) (interface{}, error) {
+func functionMin(_ EvaluationContext, args []interface{}) (interface{}, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("«the 'min' function requires at least one argument»")
 	}
@@ -131,4 +133,58 @@ func functionMin(context EvaluationContext, args []interface{}) (interface{}, er
 	}
 
 	return min, nil
+}
+
+// The `functionRange` function returns a list containing an arithmetic progression of numbers
+func functionRange(_ EvaluationContext, args []interface{}) ([]int64, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("«the 'range' function requires at least two arguments (start, end)»")
+	}
+
+	start, ok1 := toInt64(args[0])
+	end, ok2 := toInt64(args[1])
+
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("«the 'range' function arguments must be numeric»")
+	}
+
+	step := int64(1)
+	if len(args) > 2 {
+		s, ok3 := toInt64(args[2])
+		if !ok3 {
+			return nil, fmt.Errorf("«the 'range' function step argument must be numeric»")
+		}
+		step = s
+	}
+
+	if step == 0 {
+		return nil, fmt.Errorf("«the 'range' function step cannot be zero»")
+	}
+
+	var result []int64
+
+	if step > 0 {
+		for i := start; i <= end; i += step {
+			result = append(result, i)
+		}
+	} else {
+		for i := start; i >= end; i += step {
+			result = append(result, i)
+		}
+	}
+
+	return result, nil
+}
+
+// The `toInt64` is a helper function to convert an interface to an `int64`
+func toInt64(v interface{}) (int64, bool) {
+	val := reflect.ValueOf(v)
+	switch val.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return val.Int(), true
+	case reflect.Float32, reflect.Float64:
+		return int64(val.Float()), true
+	default:
+		return 0, false
+	}
 }
