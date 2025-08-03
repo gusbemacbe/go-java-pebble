@@ -494,3 +494,38 @@ func TestUrlEncodeFilter(t *testing.T) {
 		t.Errorf("«The `urlencode` filter failed. Expected to find '%s'»", expected)
 	}
 }
+
+// The `TestTrimFilter` function validates the `trim` filter
+func TestTrimFilter(t *testing.T) {
+	t.Log("--- Running Test Case: «Trim Filter» ---")
+	engine := NewEngine()
+	template, _ := engine.GetTemplate("views/test_filter_trim.peb")
+	output, _ := template.EvaluateAndGetResult(nil)
+
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := "Trimmed string: «This text has too much whitespace.»"
+	if !strings.Contains(output, expected) {
+		t.Errorf("«The `trim` filter failed. Expected to find '%s'»", expected)
+	}
+}
+
+// The `TestJoinFilter` function validates the `join` filter
+func TestJoinFilter(t *testing.T) {
+	t.Log("--- Running Test Case: «Join Filter» ---")
+	engine := NewEngine()
+	context := make(map[string]interface{})
+	context["names"] = []string{"Alex", "Joe", "Bob"}
+	template, _ := engine.GetTemplate("views/test_filter_join.peb")
+	output, _ := template.EvaluateAndGetResult(context)
+
+	t.Logf("Rendered output:\n%s", output)
+
+	if !strings.Contains(output, "Joined with comma: Alex,Joe,Bob") {
+		t.Errorf("«The `join` filter failed with a separator»")
+	}
+
+	if !strings.Contains(output, "Joined with default (empty string): AlexJoeBob") {
+		t.Errorf("«The `join` filter failed with the default separator»")
+	}
+}

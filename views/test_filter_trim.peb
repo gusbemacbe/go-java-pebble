@@ -1,0 +1,1 @@
+Trimmed string: «{{ "    This text has too much whitespace.    " | trim }}»

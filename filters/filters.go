@@ -36,6 +36,8 @@ func Apply(input interface{}, filterName string, args []interface{}) (interface{
 		return filterEscape(input, args)
 	case "first":
 		return filterFirst(input, nil)
+	case "join":
+		return filterJoin(input, args)
 	case "last":
 		return filterLast(input, nil)
 	case "length":
@@ -63,6 +65,8 @@ func Apply(input interface{}, filterName string, args []interface{}) (interface{
 		return filterSplit(input, args)
 	case "title":
 		return filterTitle(input, nil)
+	case "trim":
+		return filterTrim(input, nil)
 	case "urlencode":
 		return filterUrlEncode(input, nil)
 	case "upper":
@@ -70,6 +74,42 @@ func Apply(input interface{}, filterName string, args []interface{}) (interface{
 	default:
 		return nil, fmt.Errorf("«filter '%s' not found»", filterName)
 	}
+}
+
+// The `filterJoin` function concatenates the items of a collection into a string
+func filterJoin(input interface{}, args []interface{}) (string, error) {
+	val := reflect.ValueOf(input)
+
+	if val.Kind() != reflect.Slice && val.Kind() != reflect.Array {
+		return "", fmt.Errorf("«the 'join' filter can only be applied to collections»")
+	}
+
+	separator := ""
+
+	if len(args) > 0 {
+		sep, ok := args[0].(string)
+
+		if !ok {
+			return "", fmt.Errorf("«the 'join' filter separator must be a string»")
+		}
+
+		separator = sep
+	}
+
+	var parts []string
+
+	for i := 0; i < val.Len(); i++ {
+		part := fmt.Sprintf("%v", val.Index(i).Interface())
+		parts = append(parts, part)
+	}
+
+	return strings.Join(parts, separator), nil
+}
+
+// The `filterTrim` function trims whitespace from the beginning and end of a string
+func filterTrim(input interface{}, _ []interface{}) (string, error) {
+	str := fmt.Sprintf("%v", input)
+	return strings.TrimSpace(str), nil
 }
 
 // The `filterSha256` function calculates the SHA-256 hash of a string

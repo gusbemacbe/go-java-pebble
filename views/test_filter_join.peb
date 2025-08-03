@@ -1,0 +1,2 @@
+Joined with comma: {{ names | join(',') }}
+Joined with default (empty string): {{ names | join }}
