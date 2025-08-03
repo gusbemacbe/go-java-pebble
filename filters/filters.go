@@ -15,7 +15,7 @@ import (
 )
 
 // The `Apply` function acts as a dispatcher, calling the appropriate filter function
-func Apply(input interface{}, filterName string, args []string) (interface{}, error) {
+func Apply(input interface{}, filterName string, args []interface{}) (interface{}, error) {
 	switch filterName {
 	case "abbreviate":
 		return filterAbbreviate(input, args)
@@ -29,7 +29,7 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 		return filterDate(input, args)
 	case "default":
 		// The `default` filter is handled specially in the lexer and does not need a case here
-		return nil, fmt.Errorf("«the ‘default’ filter should be handled by the lexer»")
+		return nil, fmt.Errorf("«the 'default' filter should be handled by the lexer»")
 	case "escape":
 		return filterEscape(input, args)
 	case "first":
@@ -45,12 +45,18 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 	case "raw":
 		// The `raw` filter does nothing but signal the lexer; it returns the input unchanged
 		return input, nil
+	case "replace":
+		return filterReplace(input, args)
 	case "reverse":
 		return filterReverse(input, nil)
 	case "rsort":
-		return filterSort(input, []string{"reverse"})
+		return filterSort(input, []interface{}{"reverse"})
+	case "slice":
+		return filterSlice(input, args)
 	case "sort":
 		return filterSort(input, nil)
+	case "split":
+		return filterSplit(input, args)
 	case "title":
 		return filterTitle(input, nil)
 	case "upper":
@@ -60,8 +66,111 @@ func Apply(input interface{}, filterName string, args []string) (interface{}, er
 	}
 }
 
+// The `filterReplace` function replaces placeholders in a string
+func filterReplace(input interface{}, args []interface{}) (string, error) {
+	str := fmt.Sprintf("%v", input)
+
+	if len(args) != 1 {
+		return "", fmt.Errorf("«the 'replace' filter requires a map of replacements»")
+	}
+
+	replacements, ok := args[0].(map[string]string)
+
+	if !ok {
+		return "", fmt.Errorf("«the argument for the 'replace' filter must be a map»")
+	}
+
+	// Creating an array of old/new string pairs for the replacer
+	var oldNew []string
+
+	for old, new := range replacements {
+		oldNew = append(oldNew, old, new)
+	}
+
+	r := strings.NewReplacer(oldNew...)
+	return r.Replace(str), nil
+}
+
+// The `filterSlice` function returns a portion of a list, array, or string
+func filterSlice(input interface{}, args []interface{}) (interface{}, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("«the 'slice' filter requires 'from' and 'to' arguments»")
+	}
+
+	fromStr, okFrom := args[0].(string)
+	toStr, okTo := args[1].(string)
+
+	if !okFrom || !okTo {
+		return nil, fmt.Errorf("«slice arguments must be strings representing integers»")
+	}
+
+	from, errFrom := strconv.Atoi(fromStr)
+	to, errTo := strconv.Atoi(toStr)
+
+	if errFrom != nil || errTo != nil {
+		return nil, fmt.Errorf("«slice arguments must be convertible to integers»")
+	}
+
+	val := reflect.ValueOf(input)
+	switch val.Kind() {
+	case reflect.String:
+		str := val.String()
+
+		if from < 0 || to > len(str) || from > to {
+			return "", nil // Returning an empty string for invalid slice on string
+		}
+
+		return str[from:to], nil
+	case reflect.Slice, reflect.Array:
+		if from < 0 || to > val.Len() || from > to {
+			// Returning an empty slice of the correct type
+			return reflect.MakeSlice(val.Type(), 0, 0).Interface(), nil
+		}
+		return val.Slice(from, to).Interface(), nil
+	default:
+		return nil, fmt.Errorf("«the 'slice' filter can only be applied to strings and collections»")
+	}
+}
+
+// The `filterSplit` function splits a string by a delimiter
+func filterSplit(input interface{}, args []interface{}) ([]string, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("«the 'split' filter requires a delimiter argument»")
+	}
+
+	str := fmt.Sprintf("%v", input)
+	delimiter, ok := args[0].(string)
+
+	if !ok {
+		return nil, fmt.Errorf("«the 'split' delimiter must be a string»")
+	}
+
+	limit := -1 // Default to no limit
+
+	if len(args) > 1 {
+		limitStr, ok := args[1].(string)
+
+		if !ok {
+			return nil, fmt.Errorf("«the 'split' limit must be a string representing an integer»")
+		}
+
+		var err error
+		limit, err = strconv.Atoi(limitStr)
+
+		if err != nil {
+			return nil, fmt.Errorf("«the split limit argument must be an integer»")
+		}
+	}
+
+	if limit == 0 {
+		return strings.Split(str, delimiter), nil // Special case for limit 0 in Java vs Go
+	}
+
+	return strings.SplitN(str, delimiter, limit), nil
+}
+
 // The `filterLength` function returns the length of a string, slice, or map
-func filterLength(input interface{}, _ []string) (int, error) {
+func filterLength(input interface{}, _ []interface{}) (int, error) {
 	val := reflect.ValueOf(input)
 
 	switch val.Kind() {
@@ -73,12 +182,17 @@ func filterLength(input interface{}, _ []string) (int, error) {
 }
 
 // The `filterNumberFormat` function formats a number according to a basic pattern
-func filterNumberFormat(input interface{}, args []string) (string, error) {
+func filterNumberFormat(input interface{}, args []interface{}) (string, error) {
 	if len(args) != 1 {
 		return "", fmt.Errorf("«the 'numberformat' filter requires exactly one argument (the format string)»")
 	}
 
-	format := args[0]
+	format, ok := args[0].(string)
+
+	if !ok {
+		return "", fmt.Errorf("«number format argument must be a string»")
+	}
+
 	val := reflect.ValueOf(input)
 	var floatVal float64
 
@@ -95,7 +209,6 @@ func filterNumberFormat(input interface{}, args []string) (string, error) {
 	// Implementing a very basic parser for the format string
 	if strings.Contains(format, ".") {
 		parts := strings.Split(format, ".")
-
 		if len(parts) == 2 {
 			precision := len(parts[1])
 			return fmt.Sprintf("%."+strconv.Itoa(precision)+"f", floatVal), nil
@@ -127,7 +240,6 @@ func sortSlice(slice interface{}, reverse bool) (interface{}, error) {
 		} else {
 			sort.StringSlice(s).Sort()
 		}
-
 		return s, nil
 	case []int:
 		if reverse {
@@ -135,7 +247,6 @@ func sortSlice(slice interface{}, reverse bool) (interface{}, error) {
 		} else {
 			sort.IntSlice(s).Sort()
 		}
-
 		return s, nil
 	case []float64:
 		if reverse {
@@ -143,7 +254,6 @@ func sortSlice(slice interface{}, reverse bool) (interface{}, error) {
 		} else {
 			sort.Float64Slice(s).Sort()
 		}
-
 		return s, nil
 	default:
 		return nil, fmt.Errorf("«unsupported slice type for sorting: %T»", iSlice)
@@ -151,7 +261,7 @@ func sortSlice(slice interface{}, reverse bool) (interface{}, error) {
 }
 
 // The `filterReverse` function reverses the order of items in a collection
-func filterReverse(input interface{}, _ []string) (interface{}, error) {
+func filterReverse(input interface{}, _ []interface{}) (interface{}, error) {
 	val := reflect.ValueOf(input)
 
 	if val.Kind() != reflect.Slice {
@@ -169,14 +279,14 @@ func filterReverse(input interface{}, _ []string) (interface{}, error) {
 }
 
 // The `filterSort` function sorts a collection
-func filterSort(input interface{}, args []string) (interface{}, error) {
-	reverse := len(args) > 0 && args[0] == "reverse"
+func filterSort(input interface{}, args []interface{}) (interface{}, error) {
+	isReverse := len(args) > 0 && args[0] == "reverse"
 
-	return sortSlice(input, reverse)
+	return sortSlice(input, isReverse)
 }
 
 // The `filterFirst` function returns the first item of a collection or character of a string
-func filterFirst(input interface{}, _ []string) (interface{}, error) {
+func filterFirst(input interface{}, _ []interface{}) (interface{}, error) {
 	val := reflect.ValueOf(input)
 
 	switch val.Kind() {
@@ -188,26 +298,26 @@ func filterFirst(input interface{}, _ []string) (interface{}, error) {
 		}
 
 		r, _ := utf8.DecodeRuneInString(str)
+
 		return string(r), nil
 	case reflect.Slice, reflect.Array:
 		if val.Len() == 0 {
 			return nil, nil
 		}
-
 		return val.Index(0).Interface(), nil
 	default:
-		return nil, fmt.Errorf("«the 'first' filter can only be applied to the strings and collections»")
+		return nil, fmt.Errorf("«the 'first' filter can only be applied to strings and collections»")
 	}
 }
 
 // The `filterLast` function returns the last item of a collection or character of a string
-func filterLast(input interface{}, _ []string) (interface{}, error) {
+func filterLast(input interface{}, _ []interface{}) (interface{}, error) {
 	val := reflect.ValueOf(input)
 
 	switch val.Kind() {
 	case reflect.String:
-
 		str := val.String()
+
 		if str == "" {
 			return "", nil
 		}
@@ -219,7 +329,6 @@ func filterLast(input interface{}, _ []string) (interface{}, error) {
 		if val.Len() == 0 {
 			return nil, nil
 		}
-
 		return val.Index(val.Len() - 1).Interface(), nil
 	default:
 		return nil, fmt.Errorf("«the 'last' filter can only be applied to strings and collections»")
@@ -227,17 +336,16 @@ func filterLast(input interface{}, _ []string) (interface{}, error) {
 }
 
 // The `filterLower` function converts a string to lowercase
-func filterLower(input interface{}, _ []string) (string, error) {
+func filterLower(input interface{}, _ []interface{}) (string, error) {
 	return strings.ToLower(fmt.Sprintf("%v", input)), nil
 }
 
 // The `filterTitle` function capitalizes the first letter of each word in a string
-func filterTitle(input interface{}, _ []string) (string, error) {
+func filterTitle(input interface{}, _ []interface{}) (string, error) {
 	// The `strings.ToTitle` function is deprecated, so we use the recommended `golang.org/x/text` package approach
 	// However, to avoid adding a new dependency, a simple manual implementation is provided.
 	// For full Unicode correctness, the text package would be better.
 	words := strings.Fields(fmt.Sprintf("%v", input))
-
 	for i, word := range words {
 		if word == "" {
 			continue
@@ -246,17 +354,21 @@ func filterTitle(input interface{}, _ []string) (string, error) {
 		r, size := utf8.DecodeRuneInString(word)
 		words[i] = string(unicode.ToUpper(r)) + word[size:]
 	}
-
 	return strings.Join(words, " "), nil
 }
 
 // The `filterEscape` function escapes a string based on the given strategy
-func filterEscape(input interface{}, args []string) (string, error) {
+func filterEscape(input interface{}, args []interface{}) (string, error) {
 	str := fmt.Sprintf("%v", input)
 	strategy := "html" // Defaulting to the `html` strategy
 
 	if len(args) > 0 {
-		strategy = args[0]
+		var ok bool
+		strategy, ok = args[0].(string)
+
+		if !ok {
+			return "", fmt.Errorf("«escaping strategy argument must be a string»")
+		}
 	}
 
 	switch strategy {
@@ -282,21 +394,27 @@ func filterEscape(input interface{}, args []string) (string, error) {
 	case "url_param":
 		return url.QueryEscape(str), nil
 	default:
-		return "", fmt.Errorf("«unknown escaping strategy ‘%s’»", strategy)
+		return "", fmt.Errorf("«unknown escaping strategy '%s'»", strategy)
 	}
 }
 
 // The `filterAbbreviate` function truncates a string to a given length
-func filterAbbreviate(input interface{}, args []string) (string, error) {
+func filterAbbreviate(input interface{}, args []interface{}) (string, error) {
 	str := fmt.Sprintf("%v", input)
 
 	if len(args) != 1 {
-		return "", fmt.Errorf("«the ‘abbreviate’ filter requires exactly one argument (the max width)»")
+		return "", fmt.Errorf("«the 'abbreviate' filter requires exactly one argument (the max width)»")
 	}
 
-	maxWidth, err := strconv.Atoi(args[0])
+	widthStr, ok := args[0].(string)
+	if !ok {
+		return "", fmt.Errorf("«the 'abbreviate' width must be a string»")
+	}
+
+	maxWidth, err := strconv.Atoi(widthStr)
+
 	if err != nil {
-		return "", fmt.Errorf("«the 'abbreviate' filter’s argument must be an integer»")
+		return "", fmt.Errorf("«the 'abbreviate' filter's argument must be an integer»")
 	}
 
 	if len(str) <= maxWidth {
@@ -307,7 +425,7 @@ func filterAbbreviate(input interface{}, args []string) (string, error) {
 }
 
 // The `filterBase64Decode` function decodes a Base64 string
-func filterBase64Decode(input interface{}, _ []string) (string, error) {
+func filterBase64Decode(input interface{}, _ []interface{}) (string, error) {
 	str := fmt.Sprintf("%v", input)
 
 	decoded, err := base64.StdEncoding.DecodeString(str)
@@ -319,14 +437,14 @@ func filterBase64Decode(input interface{}, _ []string) (string, error) {
 }
 
 // The `filterBase64Encode` function encodes a string to Base64
-func filterBase64Encode(input interface{}, _ []string) (string, error) {
+func filterBase64Encode(input interface{}, _ []interface{}) (string, error) {
 	str := fmt.Sprintf("%v", input)
 
 	return base64.StdEncoding.EncodeToString([]byte(str)), nil
 }
 
 // The `filterCapitalize` function capitalizes the first letter of a string
-func filterCapitalize(input interface{}, _ []string) (string, error) {
+func filterCapitalize(input interface{}, _ []interface{}) (string, error) {
 	str := fmt.Sprintf("%v", input)
 
 	if str == "" {
@@ -339,7 +457,7 @@ func filterCapitalize(input interface{}, _ []string) (string, error) {
 }
 
 // The `filterUpper` function converts a string to uppercase
-func filterUpper(input interface{}, _ []string) (string, error) {
+func filterUpper(input interface{}, _ []interface{}) (string, error) {
 	return strings.ToUpper(fmt.Sprintf("%v", input)), nil
 }
 
@@ -365,12 +483,18 @@ func convertDateFormat(format string) string {
 }
 
 // The `filterDate` function formats a date object or string
-func filterDate(input interface{}, args []string) (string, error) {
+func filterDate(input interface{}, args []interface{}) (string, error) {
 	if len(args) < 1 {
-		return "", fmt.Errorf("«the ‘date’ filter requires at least one argument (the format)»")
+		return "", fmt.Errorf("«the 'date' filter requires at least one argument (the format)»")
 	}
 
-	outputFormat := convertDateFormat(args[0])
+	format, ok := args[0].(string)
+
+	if !ok {
+		return "", fmt.Errorf("«date format argument must be a string»")
+	}
+
+	outputFormat := convertDateFormat(format)
 	var t time.Time
 
 	// Checking the input type
@@ -379,18 +503,25 @@ func filterDate(input interface{}, args []string) (string, error) {
 		t = v
 	case string:
 		if len(args) != 2 {
-			return "", fmt.Errorf("«the ‘date’ filter on a string requires a second argument (the existing format)»")
+			return "", fmt.Errorf("«the 'date' filter on a string requires a second argument (the existing format)»")
 		}
 
-		existingFormat := convertDateFormat(args[1])
+		existingFormatStr, ok := args[1].(string)
+
+		if !ok {
+			return "", fmt.Errorf("«existing date format argument must be a string»")
+		}
+
+		existingFormat := convertDateFormat(existingFormatStr)
 		parsedTime, err := time.Parse(existingFormat, v)
 
 		if err != nil {
-			return "", fmt.Errorf("«could not parse date string ‘%s’ with format ‘%s’: %v»", v, existingFormat, err)
+			return "", fmt.Errorf("«could not parse date string '%s' with format '%s': %v»", v, existingFormat, err)
 		}
+
 		t = parsedTime
 	default:
-		return "", fmt.Errorf("«the ‘date’ filter can only be applied to a ‘time.Time’ object or a string»")
+		return "", fmt.Errorf("«the 'date' filter can only be applied to a 'time.Time' object or a string»")
 	}
 
 	return t.Format(outputFormat), nil

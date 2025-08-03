@@ -94,12 +94,25 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 		parts := strings.SplitN(collectionExpression, "|", 2)
 		variablePart := strings.TrimSpace(parts[0])
 		var filterChainPart string
+
 		if len(parts) > 1 {
 			filterChainPart = strings.TrimSpace(parts[1])
 		}
 
-		// Resolving the base collection from the context
-		collection, exists := getValueFromContext(variablePart, data)
+		var collection interface{}
+		var exists bool
+
+		// Checking if the variable part is a string literal
+		isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) ||
+			(strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
+
+		if isStringLiteral {
+			collection = variablePart[1 : len(variablePart)-1]
+			exists = true
+		} else {
+			// Otherwise, resolving it from the context
+			collection, exists = getValueFromContext(variablePart, data)
+		}
 
 		if !exists {
 			// If the collection does not exist, the loop renders nothing
@@ -108,34 +121,12 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 
 		// Applying the filter chain to the collection, if one exists
 		if filterChainPart != "" {
-			filterExpressions := strings.Split(filterChainPart, "|")
 			currentValue := collection
-
-			for _, filterExpr := range filterExpressions {
-				filterExpr = strings.TrimSpace(filterExpr)
-				if filterExpr == "" {
-					continue
-				}
-
-				reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
-				filterMatches := reFilter.FindStringSubmatch(filterExpr)
-				if len(filterMatches) < 2 {
-					continue
-				}
-
-				filterName := filterMatches[1]
-				var filterArgs []string
-				if len(filterMatches) > 2 && filterMatches[2] != "" {
-					filterArgs = parseFilterArgs(filterMatches[2])
-				}
-
-				var err error
-				currentValue, err = filters.Apply(currentValue, filterName, filterArgs)
-				if err != nil {
-					return fmt.Sprintf("[ERROR: %s]", err.Error())
-				}
+			var err error
+			currentValue, err = applyFilterChain(currentValue, filterChainPart, data)
+			if err != nil {
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
 			}
-
 			// The final result of the filter chain is our new collection
 			collection = currentValue
 		}
@@ -171,22 +162,33 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 func parseFilterArgs(argString string) []string {
 	var args []string
 	var currentArg strings.Builder
-	inQuotes := false
+	inSingleQuotes := false
+	inDoubleQuotes := false
 
-	for _, char := range argString {
-		switch char {
+	for _, r := range argString {
+		switch r {
+		case '\'':
+			if !inDoubleQuotes {
+				inSingleQuotes = !inSingleQuotes
+			}
+			// Retaining the character for the builder
+			currentArg.WriteRune(r)
 		case '"':
-			inQuotes = !inQuotes
+			if !inSingleQuotes {
+				inDoubleQuotes = !inDoubleQuotes
+			}
+			// Retaining the character for the builder
+			currentArg.WriteRune(r)
 		case ',':
-			if inQuotes {
-				currentArg.WriteRune(char)
-			} else {
+			if !inSingleQuotes && !inDoubleQuotes {
 				// Argument separator found, adding the completed argument to the list
 				args = append(args, strings.TrimSpace(currentArg.String()))
 				currentArg.Reset()
+			} else {
+				currentArg.WriteRune(r)
 			}
 		default:
-			currentArg.WriteRune(char)
+			currentArg.WriteRune(r)
 		}
 	}
 	// Adding the final argument
@@ -195,18 +197,118 @@ func parseFilterArgs(argString string) []string {
 	// Cleaning up the arguments by removing quotes and the `key=` part
 	for i, arg := range args {
 		if equalIndex := strings.Index(arg, "="); equalIndex != -1 {
+			// This is a named argument, taking only the value part
 			arg = arg[equalIndex+1:]
 		}
-		args[i] = strings.Trim(arg, `"'`)
+
+		args[i] = strings.Trim(strings.TrimSpace(arg), `"'`)
 	}
 
 	return args
 }
 
+// The `parseReplaceMap` function parses the map literal argument for the `replace` filter
+func parseReplaceMap(argString string, data map[string]interface{}) (map[string]string, error) {
+	replacements := make(map[string]string)
+	// Trimming the `{` and `}` from the string
+	content := strings.TrimSpace(argString)
+
+	if !strings.HasPrefix(content, "{") || !strings.HasSuffix(content, "}") {
+		return nil, fmt.Errorf("«invalid map literal for 'replace' filter»")
+	}
+
+	content = content[1 : len(content)-1]
+
+	// Splitting the content into key-value pairs
+	pairs := strings.Split(content, ",")
+
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, ":", 2)
+
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.Trim(strings.TrimSpace(parts[0]), `"'`)
+		valueStr := strings.TrimSpace(parts[1])
+
+		var value string
+		// Checking if the value is a string literal or a context variable
+		if (strings.HasPrefix(valueStr, `"`) && strings.HasSuffix(valueStr, `"`)) ||
+			(strings.HasPrefix(valueStr, `'`) && strings.HasSuffix(valueStr, `'`)) {
+			value = valueStr[1 : len(valueStr)-1]
+		} else {
+			if val, ok := getValueFromContext(valueStr, data); ok {
+				value = fmt.Sprintf("%v", val)
+			}
+		}
+
+		replacements[key] = value
+	}
+
+	return replacements, nil
+}
+
+// The `applyFilterChain` function processes a chain of filters on a given value
+func applyFilterChain(value interface{}, chain string, data map[string]interface{}) (interface{}, error) {
+	currentValue := value
+	filterExpressions := strings.Split(chain, "|")
+
+	for _, filterExpr := range filterExpressions {
+		filterExpr = strings.TrimSpace(filterExpr)
+		if filterExpr == "" {
+			continue
+		}
+
+		reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
+		filterMatches := reFilter.FindStringSubmatch(filterExpr)
+
+		if len(filterMatches) < 2 {
+			continue
+		}
+
+		filterName := filterMatches[1]
+		argString := ""
+
+		if len(filterMatches) > 2 {
+			argString = filterMatches[2]
+		}
+
+		var err error
+		var args []interface{} // Using `[]interface{}` to handle different argument types
+
+		if filterName == "replace" {
+			// The `replace` filter is special and takes a map
+			replacements, err := parseReplaceMap(argString, data)
+
+			if err != nil {
+				return nil, err
+			}
+
+			args = append(args, replacements)
+		} else if argString != "" {
+			// Other filters take a simple list of strings
+			strArgs := parseFilterArgs(argString)
+
+			for _, s := range strArgs {
+				args = append(args, s)
+			}
+		}
+
+		currentValue, err = filters.Apply(currentValue, filterName, args)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return currentValue, nil
+}
+
 // The lexVariables function can
 // - replace the simple `{{ variable }}` placeholders,
 // - passe the `strictVariables` flag to the resolver
-// - parse and apply the filters, including the auto-escaping
+// - parse and apply the filters, including the auto-escaping and numeric literals
 func lexVariables(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// This regex now captures the main variable/literal and the filter chain
 	re := regexp.MustCompile(`{{\s*(.*?)\s*}}`)
@@ -217,6 +319,7 @@ func lexVariables(input string, data map[string]interface{}, engineConfig Engine
 		// Splitting the expression into the base variable and the filter chain
 		parts := strings.SplitN(fullExpression, "|", 2)
 		variablePart := strings.TrimSpace(parts[0])
+
 		var filterChainPart string
 
 		if len(parts) > 1 {
@@ -283,49 +386,23 @@ func lexVariables(input string, data map[string]interface{}, engineConfig Engine
 
 		// --- Filter Processing ---
 		currentValue := initialValue
-		filterExpressions := strings.Split(filterChainPart, "|")
-
 		// If there are no filters, returning the value directly
 		if filterChainPart != "" {
-			for _, filterExpr := range filterExpressions {
-				filterExpr = strings.TrimSpace(filterExpr)
+			var err error
+			currentValue, err = applyFilterChain(initialValue, filterChainPart, data)
 
-				if filterExpr == "" {
-					continue
-				}
-
-				// Parsing the filter name and arguments
-				reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
-				filterMatches := reFilter.FindStringSubmatch(filterExpr)
-
-				if len(filterMatches) < 2 {
-					// This should not happen with a valid filter expression
-					continue
-				}
-
-				filterName := filterMatches[1]
-				var filterArgs []string
-
-				if len(filterMatches) > 2 && filterMatches[2] != "" {
-					// Splitting arguments by comma, but respecting quotes
-					// This is a simplified parser; a full implementation would be more complex
-					// Using the new robust argument parser
-					filterArgs = parseFilterArgs(filterMatches[2])
-				}
-
-				var err error
-				currentValue, err = filters.Apply(currentValue, filterName, filterArgs)
-				if err != nil {
-					// In a real application, you might want to handle this error more gracefully
-					return fmt.Sprintf("[ERROR: %s]", err.Error())
-				}
+			if err != nil {
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
 			}
 		}
 
 		// --- Auto-escaping Logic ---
+		filterExpressions := strings.Split(filterChainPart, "|")
 		shouldEscape := engineConfig.AutoEscaping
+
 		if len(filterExpressions) > 0 {
 			lastFilter := strings.TrimSpace(filterExpressions[len(filterExpressions)-1])
+
 			if strings.HasPrefix(lastFilter, "raw") || strings.HasPrefix(lastFilter, "escape") {
 				shouldEscape = false
 			}
@@ -336,10 +413,11 @@ func lexVariables(input string, data map[string]interface{}, engineConfig Engine
 		}
 
 		if shouldEscape {
-			escapedValue, err := filters.Apply(currentValue, "escape", []string{engineConfig.DefaultEscapingStrategy})
+			escapedValue, err := filters.Apply(currentValue, "escape", []interface{}{engineConfig.DefaultEscapingStrategy})
 			if err != nil {
 				return fmt.Sprintf("[ERROR: %s]", err.Error())
 			}
+
 			currentValue = escapedValue
 		}
 

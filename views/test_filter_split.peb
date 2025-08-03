@@ -1,0 +1,2 @@
+Simple split: {% for item in "one,two,three" | split(',') %}{{ item }};{% endfor %}
+Split with limit: {% for item in "one,two,three,four,five" | split(',', 3) %}{{ item }};{% endfor %}

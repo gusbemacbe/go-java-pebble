@@ -115,6 +115,13 @@ func main() {
 	runTest(engine, "views/test_filter_sort.peb", sortableContext, "Sort Filter")
 	runTest(engine, "views/test_filter_rsort.peb", sortableContext, "Reverse Sort Filter")
 
+	// --- Tests for `length` and `numberformat` filters ---
+	lengthContext := make(map[string]interface{})
+	lengthContext["users"] = []string{"Alex", "Joe", "Bob"}
+	lengthContext["settings"] = map[string]string{"a": "1", "b": "2"}
+	runTest(engine, "views/test_filter_length.peb", lengthContext, "Length Filter")
+	runTest(engine, "views/test_filter_numberformat.peb", nil, "Number Format Filter")
+
 	fmt.Println("---------------------------------")
 	fmt.Println("All test cases have been executed.")
 }
