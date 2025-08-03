@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"go-java-pebble/pebble"
 	"log"
 	"time"
 )
 
 // The `runTest` function encapsulates the logic for running a single template test
-func runTest(engine *PebbleEngine, templatePath string, context map[string]interface{}, testName string) {
+func runTest(engine *pebble.PebbleEngine, templatePath string, context map[string]interface{}, testName string) {
 	fmt.Printf("--- Running Test Case: «%s» ---\n", testName)
 
 	// Getting the template from the specified path
@@ -30,7 +31,7 @@ func runTest(engine *PebbleEngine, templatePath string, context map[string]inter
 
 func main() {
 	// Creating a new instance of the `PebbleEngine`
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 
 	// --- High-level integration tests for each view file ---
 
@@ -53,17 +54,12 @@ func main() {
 
 	// Context for `views/test_attributes.peb`
 	attributeContext := make(map[string]interface{})
-	attributeContext["user"] = User{
-		Name: "Benozzo",
-		Age:  30,
-		Profile: &Profile{
-			URL: "https://example.com/benozzo",
-		},
+	attributeContext["user"] = pebble.User{
+		Name:    "Benozzo",
+		Age:     30,
+		Profile: &pebble.Profile{URL: "https://example.com/benozzo"},
 	}
-	attributeContext["settings"] = map[string]string{
-		"theme":       "dark",
-		"font-family": "DejaVu Sans Mono",
-	}
+	attributeContext["settings"] = map[string]string{"theme": "dark", "font-family": "DejaVu Sans Mono"}
 	attributeContext["colors"] = []string{"Orange", "Cyan", "Magenta"}
 	attributeContext["nilObject"] = nil
 	runTest(engine, "views/test_attributes.peb", attributeContext, "Attribute Access")

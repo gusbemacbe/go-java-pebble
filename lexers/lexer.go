@@ -18,9 +18,22 @@ type EngineConfig struct {
 	Locale                  string
 }
 
+// The `Template` interface defines the contract that the lexer needs to interact with a template,
+// breaking the circular dependency between the `lexers` and `pebble` packages.
+type Template interface {
+	Parent() Template
+	GetBlock(name string) string
+	Blocks() map[string]string
+}
+
 // The `TemplateState` struct holds state specific to a single template rendering, such as the content of declared blocks.
 type TemplateState struct {
-	blocks map[string]string
+	// The `Current` template whose content is actively being parsed
+	Current Template
+	// The `Leaf` template is the child-most template in an inheritance chain. Its blocks take precedence.
+	Leaf Template
+	// The `currentBlockName` tracks which block is currently being rendered, crucial for `parent()`
+	currentBlockName string
 }
 
 // The `pathSegmentRegex` is used to tokenise an access path like `user.profile["url"]`
@@ -28,30 +41,26 @@ var pathSegmentRegex = regexp.MustCompile(`(\w+)|\["([^"]+)"\]|\[(\d+)\]`)
 
 // The `Lex` function performs the lexical analysis and replacement of the Pebble expressions.
 // The order of operations is critical.
-func Lex(input string, data map[string]interface{}, engineConfig EngineConfig) string {
-	// Initializing the state for this render. This is a pointer, so it can be passed down and modified by the tag parser.
-	state := &TemplateState{
-		blocks: make(map[string]string),
-	}
+func Lex(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
+	// 1. First pass: Hiding the `extends` tag as it has already been processed by the engine
+	reExtends := regexp.MustCompile(`(?s){%\s*extends\s+"[^"]+"\s*%}`)
+	output := reExtends.ReplaceAllString(input, "")
 
-	// 1. First pass: Processing the tags like `{% block %}` and `{% flush %}`.
-	//    The `lexTags` function will find all `block` declarations, store their content in the `state`, and render the block in place the first time.
-	output := lexTags(input, state)
+	// 2. Second pass: Processing all other tags, now with inheritance context
+	output = lexTags(output, data, engineConfig, state)
 
-	// 2. Second pass: Processing the structural blocks like `{% if %}` and `{% for %}`.
-	//    These functions are recursive and will correctly handle nested structures.
-	output = lexIf(output, data, engineConfig)
-	output = lexFor(output, data, engineConfig)
+	// 3. Third pass: Processing standard `if` and `for` blocks
+	output = lexIf(output, data, engineConfig, state)
+	output = lexFor(output, data, engineConfig, state)
 
-	// 3. Final pass: Processing all `{{ ... }}` expressions, including variables,
-	//    filters, and function calls. This happens last, after the loops and conditionals have been resolved.
+	// 4. Final pass: Processing all `{{ ... }}` expressions
 	output = lexExpressions(output, data, engineConfig, state)
 
 	return output
 }
 
-// The `lexTags` function handles the initial processing of tags like `{% block %}`
-func lexTags(input string, state *TemplateState) string {
+// The `lexTags` function handles the processing of tags, now with inheritance logic
+func lexTags(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
 	// The regular expression to find `{% block "name" %}...{% endblock %}`
 	reBlock := regexp.MustCompile(`(?s){%\s*block\s+"([^"]+)"\s*%}(.*?){%\s*endblock\s*%}`)
 
@@ -59,13 +68,26 @@ func lexTags(input string, state *TemplateState) string {
 	output := reBlock.ReplaceAllStringFunc(input, func(match string) string {
 		submatches := reBlock.FindStringSubmatch(match)
 		blockName := submatches[1]
-		blockContent := submatches[2]
 
-		// Storing the captured content in our state map for later use by the `block()` function
-		state.blocks[blockName] = blockContent
+		// Using the blocks from the leaf-most template in the inheritance chain
+		overrideContent, hasOverride := state.Leaf.Blocks()[blockName]
 
-		// Returning the content so it is rendered the first time in its original location
-		return blockContent
+		// Checking if an overriding block from a child template exists
+		if hasOverride {
+			// Creating a new state for this rendering context.
+			// The "current" template is now the leaf, as we are rendering its content.
+			childState := &TemplateState{
+				Current:          state.Leaf,
+				Leaf:             state.Leaf,
+				currentBlockName: blockName,
+			}
+			// Recursively rendering the child's block content
+			return Lex(overrideContent, data, engineConfig, childState)
+		}
+
+		// If there is no override, rendering this template's own block content
+		originalContent := submatches[2]
+		return Lex(originalContent, data, engineConfig, state)
 	})
 
 	// The regular expression to find and simply remove `{% flush %}` tags, as they have no effect in our in-memory model
@@ -91,12 +113,32 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 			functionName := funcMatches[1]
 			argString := funcMatches[2]
 
-			// Special handling for the `block` function, which is lexer-aware
+			// Special handling for the `parent()` function
+			if functionName == "parent" {
+				// The `state.Current` is the template that defined the block where `parent()` is being called.
+				// Its parent is the one we need to get the original block from.
+				if state.Current != nil && state.Current.Parent() != nil {
+					// Getting the parent's original content for the current block
+					parentContent := state.Current.Parent().GetBlock(state.currentBlockName)
+					// Creating a new state for the parent's context to avoid mutation.
+					// The "current" template for this render becomes the parent.
+					parentState := &TemplateState{
+						Current:          state.Current.Parent(),
+						Leaf:             state.Leaf,
+						currentBlockName: state.currentBlockName,
+					}
+					// Recursively rendering the parent's block content
+					return Lex(parentContent, data, engineConfig, parentState)
+				}
+				return ""
+			}
+
+			// Special handling for the `block()` function
 			if functionName == "block" {
 				arg := strings.Trim(argString, ` "`)
-
-				if content, ok := state.blocks[arg]; ok {
-					return content
+				// Using the resolved block content from the top-level (leaf) template
+				if content, ok := state.Leaf.Blocks()[arg]; ok {
+					return Lex(content, data, engineConfig, state)
 				}
 
 				return ""
@@ -214,8 +256,8 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 	})
 }
 
-// The `lexIf` function processes the `if/else` blocks
-func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig) string {
+// The `lexIf` function now recursively calls `Lex` to process nested content
+func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
 	re := regexp.MustCompile(`(?s){%\s*if\s+(.*?)\s*%}(.*?)(?:{%\s*else\s*%}(.*?))?{%\s*endif\s*%}`)
 
 	return re.ReplaceAllStringFunc(input, func(match string) string {
@@ -236,7 +278,7 @@ func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig)
 			}
 
 			// In non-strict mode, a non-existent variable evaluates to `false`, so we render the `else` block
-			return elseBlock
+			return Lex(elseBlock, data, engineConfig, state)
 		}
 
 		// A simple truthiness check on the existing value
@@ -248,15 +290,15 @@ func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig)
 		}
 
 		if conditionResult {
-			return Lex(ifBlock, data, engineConfig)
+			return Lex(ifBlock, data, engineConfig, state)
 		}
 
-		return Lex(elseBlock, data, engineConfig)
+		return Lex(elseBlock, data, engineConfig, state)
 	})
 }
 
-// The `lexFor` function processes `for` loops, including those with filters
-func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig) string {
+// The `lexFor` function now recursively calls `Lex` to process the loop body
+func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
 	// Defining the regular expression to find `for-endfor` blocks
 	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(.*?)\s*%}(.*?){%\s*endfor\s*%}`)
 
@@ -325,14 +367,14 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 			loopContext[loopVar] = val.Index(i).Interface()
 
 			// Recursively processing the loop body with the new context
-			result.WriteString(Lex(loopBody, loopContext, engineConfig))
+			result.WriteString(Lex(loopBody, loopContext, engineConfig, state))
 		}
 
 		return result.String()
 	})
 }
 
-// The `parseFilterArgs` function intelligently splits arguments for filters
+// The `parseFilterArgs` function intelligently splits arguments, respecting quoted strings and named arguments
 func parseFilterArgs(argString string) []string {
 	var args []string
 	var currentArg strings.Builder

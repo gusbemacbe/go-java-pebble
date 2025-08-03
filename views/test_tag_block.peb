@@ -1,0 +1,5 @@
+This is the parent template header.
+{% block "content" %}
+  This is the default content from the parent.
+{% endblock %}
+This is the parent template footer.

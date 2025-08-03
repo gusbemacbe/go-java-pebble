@@ -1,0 +1,9 @@
+{% extends "views/test_tag_block.peb" %}
+
+{% block "content" %}
+This is the new content from the child.
+---
+{{ parent() }}
+---
+More content from the child.
+{% endblock %}

@@ -26,6 +26,9 @@ func Apply(functionName string, context EvaluationContext, args []interface{}) (
 		return functionMax(context, args)
 	case "min":
 		return functionMin(context, args)
+	// The `parent` function is also a special case handled by the lexer
+	case "parent":
+		return nil, fmt.Errorf("«the 'parent' function is handled by the lexer»")
 	default:
 		return nil, fmt.Errorf("«function '%s' not found»", functionName)
 	}

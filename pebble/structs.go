@@ -1,4 +1,4 @@
-package main
+package pebble
 
 // The `Profile` struct represents a user’s profile information
 type Profile struct {

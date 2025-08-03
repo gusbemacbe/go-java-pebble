@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go-java-pebble/pebble"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 // The `TestSimpleVariableReplacement` function validates the basic variable substitution
 func TestSimpleVariableReplacement(t *testing.T) {
 	t.Log("--- Running Test Case: «Simple Variable Replacement» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["name"] = "Gus"
 	template, _ := engine.GetTemplate("views/test.peb")
@@ -26,7 +27,7 @@ func TestSimpleVariableReplacement(t *testing.T) {
 // The `TestComprehensiveBlocks` function validates the `if/else` statements and `for` loops
 func TestComprehensiveBlocks(t *testing.T) {
 	t.Log("--- Running Test Case: «Comprehensive Blocks» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 
 	// Testing the 'if' branch (admin user)
 	adminContext := make(map[string]interface{})
@@ -39,6 +40,7 @@ func TestComprehensiveBlocks(t *testing.T) {
 	if !strings.Contains(adminOutput, "<h1>Welcome, administrator!</h1>") {
 		t.Errorf("«'if' block failed for admin user»")
 	}
+
 	if !strings.Contains(adminOutput, "<li>Dashboard</li>") {
 		t.Errorf("«'for' block failed for admin user»")
 	}
@@ -53,6 +55,7 @@ func TestComprehensiveBlocks(t *testing.T) {
 	if !strings.Contains(userOutput, "<h1>Welcome, Gus!</h1>") {
 		t.Errorf("«'else' block failed for regular user»")
 	}
+
 	if !strings.Contains(userOutput, "<li>Profile</li>") {
 		t.Errorf("«'for' block failed for regular user»")
 	}
@@ -62,7 +65,7 @@ func TestComprehensiveBlocks(t *testing.T) {
 func TestBlockStatementsDelimiter(t *testing.T) {
 	t.Log("--- Running Test Case: «Block Statements (If/For)» ---")
 
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["user"] = map[string]interface{}{"name": "Benozzo", "isAdmin": true}
 	context["colors"] = []string{"Red", "Green", "Blue"}
@@ -84,13 +87,14 @@ func TestBlockStatementsDelimiter(t *testing.T) {
 func TestAttributeAccess(t *testing.T) {
 	t.Log("--- Running Test Case: «Attribute Access» ---")
 
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
-	context["user"] = User{
+	context["user"] = pebble.User{
 		Name:    "Benozzo",
 		Age:     30,
-		Profile: &Profile{URL: "https://example.com/benozzo"},
+		Profile: &pebble.Profile{URL: "https://example.com/benozzo"},
 	}
+
 	context["settings"] = map[string]string{"theme": "dark", "font-family": "DejaVu Sans Mono"}
 	context["colors"] = []string{"Orange", "Cyan", "Magenta"}
 	context["nilObject"] = nil
@@ -121,7 +125,7 @@ func TestFilters(t *testing.T) {
 	t.Log("--- Running Test Case: «Template Filters» ---")
 
 	// Creating a new instance of the PebbleEngine
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 
 	// Creating the context for the filter test
 	filterContext := make(map[string]interface{})
@@ -174,7 +178,7 @@ func TestEscapeFilter(t *testing.T) {
 	context["dangerousJS"] = `'); alert('xss');`
 
 	// --- Test with auto-escaping disabled ---
-	engineNoEscape := NewEngine().SetAutoEscaping(false)
+	engineNoEscape := pebble.NewEngine().SetAutoEscaping(false)
 	template, err := engineNoEscape.GetTemplate("views/test_filter_escape.peb")
 
 	if err != nil {
@@ -198,7 +202,7 @@ func TestEscapeFilter(t *testing.T) {
 	}
 
 	// --- Test with auto-escaping enabled (default) ---
-	engineWithEscape := NewEngine()
+	engineWithEscape := pebble.NewEngine()
 
 	template, err = engineWithEscape.GetTemplate("views/test_filter_escape.peb")
 
@@ -233,7 +237,7 @@ func TestEscapeFilter(t *testing.T) {
 // The `TestFirstFilter` function validates the `first` filter
 func TestFirstFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «First Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_first.peb")
@@ -253,7 +257,7 @@ func TestFirstFilter(t *testing.T) {
 // The `TestLastFilter` function validates the `last` filter
 func TestLastFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Last Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_last.peb")
@@ -273,7 +277,7 @@ func TestLastFilter(t *testing.T) {
 // The `TestLowerFilter` function validates the `lower` filter
 func TestLowerFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Lower Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_lower.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
 
@@ -289,7 +293,7 @@ func TestLowerFilter(t *testing.T) {
 // The `TestTitleFilter` function validates the `title` filter
 func TestTitleFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Title Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_title.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
 
@@ -305,7 +309,7 @@ func TestTitleFilter(t *testing.T) {
 // The `TestReverseFilter` function validates the `reverse` filter
 func TestReverseFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Reverse Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_reverse.peb")
@@ -322,7 +326,7 @@ func TestReverseFilter(t *testing.T) {
 // The `TestSortFilter` function validates the `sort` filter
 func TestSortFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Sort Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Joe", "Alex", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_sort.peb")
@@ -340,7 +344,7 @@ func TestSortFilter(t *testing.T) {
 func TestRsortFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Reverse Sort Filter» ---")
 
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Joe", "Alex", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_rsort.peb")
@@ -358,7 +362,7 @@ func TestRsortFilter(t *testing.T) {
 // The `TestLengthFilter` function validates the `length` filter
 func TestLengthFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Length Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	context["settings"] = map[string]string{"a": "1", "b": "2"}
@@ -383,7 +387,7 @@ func TestLengthFilter(t *testing.T) {
 // The `TestNumberFormatFilter` function validates the `numberformat` filter
 func TestNumberFormatFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Number Format Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_numberformat.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
 
@@ -399,7 +403,7 @@ func TestNumberFormatFilter(t *testing.T) {
 // The `TestReplaceFilter` function validates the `replace` filter
 func TestReplaceFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Replace Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["foo"] = "baz"
 	template, _ := engine.GetTemplate("views/test_filter_replace.peb")
@@ -417,7 +421,7 @@ func TestReplaceFilter(t *testing.T) {
 func TestSliceFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Slice Filter» ---")
 
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["items"] = []string{"apple", "peach", "pear", "banana"}
 	template, _ := engine.GetTemplate("views/test_filter_slice.peb")
@@ -437,7 +441,7 @@ func TestSliceFilter(t *testing.T) {
 func TestSplitFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Split Filter» ---")
 
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_split.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "")
 
@@ -460,7 +464,7 @@ func TestSplitFilter(t *testing.T) {
 // The `TestSha256Filter` function validates the `sha256` filter
 func TestSha256Filter(t *testing.T) {
 	t.Log("--- Running Test Case: «SHA256 Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_sha256.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "")
 
@@ -475,7 +479,7 @@ func TestSha256Filter(t *testing.T) {
 // The `TestUrlEncodeFilter` function validates the `urlencode` filter
 func TestUrlEncodeFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «URL Encode Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_urlencode.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "")
 
@@ -490,7 +494,7 @@ func TestUrlEncodeFilter(t *testing.T) {
 // The `TestTrimFilter` function validates the `trim` filter
 func TestTrimFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Trim Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_trim.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "")
 
@@ -505,7 +509,7 @@ func TestTrimFilter(t *testing.T) {
 // The `TestJoinFilter` function validates the `join` filter
 func TestJoinFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Join Filter» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["names"] = []string{"Alex", "Joe", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_join.peb")
@@ -525,7 +529,7 @@ func TestJoinFilter(t *testing.T) {
 // The TestBlockFunction function validates the `block` tag and function
 func TestBlockFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «Block Tag and Function» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_function_block.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "")
 
@@ -544,7 +548,7 @@ func TestBlockFunction(t *testing.T) {
 // The TestFlushTag function validates the parsing of the `flush` tag
 func TestFlushTag(t *testing.T) {
 	t.Log("--- Running Test Case: «Flush Tag» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	template, _ := engine.GetTemplate("views/test_tag_flush.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "")
 
@@ -565,7 +569,7 @@ func TestI18nFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «i18n Function» ---")
 
 	// Testing with the default locale (English)
-	engine := NewEngine() // The default locale is "" which falls back to the base `messages.properties`
+	engine := pebble.NewEngine() // The default locale is "" which falls back to the base `messages.properties`
 	template, _ := engine.GetTemplate("views/test_function_i18n.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "") // Explicitly passing no locale
 
@@ -589,7 +593,7 @@ func TestI18nFunction(t *testing.T) {
 // The `TestMaxFunction` function validates the `max` function
 func TestMaxFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «Max Function» ---")
-	engine := NewEngine()
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["user"] = map[string]interface{}{"score": 60}
 	template, _ := engine.GetTemplate("views/test_function_max.peb")
@@ -606,7 +610,8 @@ func TestMaxFunction(t *testing.T) {
 // The `TestMinFunction` function validates the `min` function
 func TestMinFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «Min Function» ---")
-	engine := NewEngine()
+
+	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["user"] = map[string]interface{}{"score": 60}
 	template, _ := engine.GetTemplate("views/test_function_min.peb")
@@ -615,7 +620,47 @@ func TestMinFunction(t *testing.T) {
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "The minimum value is: 20"
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `min` function failed. Expected to find '%s'»", expected)
+	}
+}
+
+// The `TestTemplateInheritance` function validates the `extends` tag and `parent()` function
+func TestTemplateInheritance(t *testing.T) {
+	t.Log("--- Running Test Case: «Template Inheritance with Parent Function» ---")
+	engine := pebble.NewEngine()
+
+	// Evaluating the child template, which should trigger the inheritance logic
+	template, err := engine.GetTemplate("views/test_function_parent.peb")
+
+	if err != nil {
+		t.Fatalf("«Failed to get child template: %v»", err)
+	}
+
+	output, err := template.EvaluateAndGetResult(nil, "") // Using the default locale
+
+	if err != nil {
+		t.Fatalf("«Failed to evaluate template: %v»", err)
+	}
+
+	t.Logf("Rendered output:\n%s", output)
+
+	// Constructing the expected output by hand
+	expected := `
+		This is the parent template header.
+		This is the new content from the child.
+		---
+		This is the default content from the parent.
+		---
+		More content from the child.
+		This is the parent template footer.
+	`
+	// Normalizing whitespace for a robust comparison
+	normalizedOutput := strings.Join(strings.Fields(output), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if normalizedOutput != normalizedExpected {
+		t.Errorf("«Template inheritance failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
 	}
 }
