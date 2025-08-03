@@ -58,7 +58,7 @@ func TestComprehensiveBlocks(t *testing.T) {
 	}
 }
 
-// The `TestBlockStatementsDelimiter` function validates another set of if/for blocks
+// The `TestBlockStatementsDelimiter` function validates another set of `if/for` blocks
 func TestBlockStatementsDelimiter(t *testing.T) {
 	t.Log("--- Running Test Case: «Block Statements (If/For)» ---")
 
@@ -67,7 +67,7 @@ func TestBlockStatementsDelimiter(t *testing.T) {
 	context["user"] = map[string]interface{}{"name": "Benozzo", "isAdmin": true}
 	context["colors"] = []string{"Red", "Green", "Blue"}
 	template, _ := engine.GetTemplate("views/test_block_statements_delimiter.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -95,7 +95,7 @@ func TestAttributeAccess(t *testing.T) {
 	context["colors"] = []string{"Orange", "Cyan", "Magenta"}
 	context["nilObject"] = nil
 	template, _ := engine.GetTemplate("views/test_attributes.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -139,8 +139,7 @@ func TestFilters(t *testing.T) {
 	}
 
 	// Evaluating the template with the provided context
-	output, err := compiledTemplate.EvaluateAndGetResult(filterContext, "")
-
+	output, err := compiledTemplate.EvaluateAndGetResult(filterContext, "") // Using the default locale
 	if err != nil {
 		t.Fatalf("«Error evaluating template 'views/test_filters.peb': %v»", err)
 	}
@@ -182,7 +181,7 @@ func TestEscapeFilter(t *testing.T) {
 		t.Fatalf("«Failed to get template: %v»", err)
 	}
 
-	output, err := template.EvaluateAndGetResult(context, "")
+	output, err := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	if err != nil {
 		t.Fatalf("«Failed to evaluate template: %v»", err)
@@ -207,7 +206,7 @@ func TestEscapeFilter(t *testing.T) {
 		t.Fatalf("«Failed to get template: %v»", err)
 	}
 
-	output, err = template.EvaluateAndGetResult(context, "")
+	output, err = template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	if err != nil {
 		t.Fatalf("«Failed to evaluate template: %v»", err)
@@ -238,7 +237,7 @@ func TestFirstFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_first.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -258,7 +257,7 @@ func TestLastFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_last.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -276,7 +275,7 @@ func TestLowerFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Lower Filter» ---")
 	engine := NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_lower.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -292,7 +291,7 @@ func TestTitleFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Title Filter» ---")
 	engine := NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_title.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -310,7 +309,7 @@ func TestReverseFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_reverse.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -327,7 +326,7 @@ func TestSortFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["users"] = []string{"Joe", "Alex", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_sort.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -345,7 +344,7 @@ func TestRsortFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["users"] = []string{"Joe", "Alex", "Bob"}
 	template, _ := engine.GetTemplate("views/test_filter_rsort.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -364,7 +363,7 @@ func TestLengthFilter(t *testing.T) {
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	context["settings"] = map[string]string{"a": "1", "b": "2"}
 	template, _ := engine.GetTemplate("views/test_filter_length.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -386,7 +385,7 @@ func TestNumberFormatFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Number Format Filter» ---")
 	engine := NewEngine()
 	template, _ := engine.GetTemplate("views/test_filter_numberformat.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -404,7 +403,7 @@ func TestReplaceFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["foo"] = "baz"
 	template, _ := engine.GetTemplate("views/test_filter_replace.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -422,7 +421,7 @@ func TestSliceFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["items"] = []string{"apple", "peach", "pear", "banana"}
 	template, _ := engine.GetTemplate("views/test_filter_slice.peb")
-	output, _ := template.EvaluateAndGetResult(context, "")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -561,12 +560,12 @@ func TestFlushTag(t *testing.T) {
 	}
 }
 
-// The TestI18nFunction function validates the `i18n` function
+// The `TestI18nFunction` function validates the `i18n` function
 func TestI18nFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «i18n Function» ---")
 
 	// Testing with the default locale (English)
-	engine := NewEngine() // Default locale is "" which falls back to the base `messages.properties`
+	engine := NewEngine() // The default locale is "" which falls back to the base `messages.properties`
 	template, _ := engine.GetTemplate("views/test_function_i18n.peb")
 	output, _ := template.EvaluateAndGetResult(nil, "") // Explicitly passing no locale
 
@@ -584,5 +583,39 @@ func TestI18nFunction(t *testing.T) {
 	t.Logf("Rendered output (Spanish Locale):\n%s", spanishOutput)
 	if !strings.Contains(spanishOutput, "Spanish locale farewell: Adiós") {
 		t.Errorf("«i18n failed for the Spanish locale override»")
+	}
+}
+
+// The `TestMaxFunction` function validates the `max` function
+func TestMaxFunction(t *testing.T) {
+	t.Log("--- Running Test Case: «Max Function» ---")
+	engine := NewEngine()
+	context := make(map[string]interface{})
+	context["user"] = map[string]interface{}{"score": 60}
+	template, _ := engine.GetTemplate("views/test_function_max.peb")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := "The maximum value is: 80"
+	if !strings.Contains(output, expected) {
+		t.Errorf("«The `max` function failed. Expected to find '%s'»", expected)
+	}
+}
+
+// The `TestMinFunction` function validates the `min` function
+func TestMinFunction(t *testing.T) {
+	t.Log("--- Running Test Case: «Min Function» ---")
+	engine := NewEngine()
+	context := make(map[string]interface{})
+	context["user"] = map[string]interface{}{"score": 60}
+	template, _ := engine.GetTemplate("views/test_function_min.peb")
+	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := "The minimum value is: 20"
+	if !strings.Contains(output, expected) {
+		t.Errorf("«The `min` function failed. Expected to find '%s'»", expected)
 	}
 }

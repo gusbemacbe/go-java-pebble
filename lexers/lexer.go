@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// The `EngineConfig` struct passes down ethe ngine-wide settings to the lexer
+// The `EngineConfig` struct passes down the engine-wide settings to the lexer
 type EngineConfig struct {
 	StrictVariables         bool
 	AutoEscaping            bool
@@ -26,7 +26,7 @@ type TemplateState struct {
 // The `pathSegmentRegex` is used to tokenise an access path like `user.profile["url"]`
 var pathSegmentRegex = regexp.MustCompile(`(\w+)|\["([^"]+)"\]|\[(\d+)\]`)
 
-// The `Lex` function performs rge lexical analysis and replacement of the Pebble expressions.
+// The `Lex` function performs the lexical analysis and replacement of the Pebble expressions.
 // The order of operations is critical.
 func Lex(input string, data map[string]interface{}, engineConfig EngineConfig) string {
 	// Initializing the state for this render. This is a pointer, so it can be passed down and modified by the tag parser.
@@ -34,16 +34,17 @@ func Lex(input string, data map[string]interface{}, engineConfig EngineConfig) s
 		blocks: make(map[string]string),
 	}
 
-	// 1. First pass: Process tags like `{% block %}` and `{% flush %}`.
+	// 1. First pass: Processing the tags like `{% block %}` and `{% flush %}`.
 	//    The `lexTags` function will find all `block` declarations, store their content in the `state`, and render the block in place the first time.
 	output := lexTags(input, state)
 
-	// 2. Second pass: Process structural blocks like `{% if %}` and `{% for %}`.
+	// 2. Second pass: Processing the structural blocks like `{% if %}` and `{% for %}`.
 	//    These functions are recursive and will correctly handle nested structures.
 	output = lexIf(output, data, engineConfig)
 	output = lexFor(output, data, engineConfig)
 
-	// 3. Final pass: Process all `{{ ... }}` expressions, including variables, filters, and function calls. This happens last, after the loops and conditionals have been resolved.
+	// 3. Final pass: Processing all `{{ ... }}` expressions, including variables,
+	//    filters, and function calls. This happens last, after the loops and conditionals have been resolved.
 	output = lexExpressions(output, data, engineConfig, state)
 
 	return output
@@ -150,9 +151,11 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 			if s, ok := initialValue.(string); ok && s == "" {
 				isEmpty = true
 			}
+
 			if isEmpty {
 				matches := reDefault.FindStringSubmatch(filterChainPart)
 				defaultValue := strings.Trim(matches[1], `"'`)
+
 				return defaultValue
 			} else {
 				filterChainPart = reDefault.ReplaceAllString(filterChainPart, "")
@@ -163,6 +166,7 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 			if engineConfig.StrictVariables {
 				return fmt.Sprintf("[ERROR: Variable «%s» not found]", variablePart)
 			}
+
 			return ""
 		}
 
@@ -264,6 +268,7 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 
 		// Splitting the expression to separate the variable from the filter chain
 		parts := strings.SplitN(collectionExpression, "|", 2)
+
 		variablePart := strings.TrimSpace(parts[0])
 		var filterChainPart string
 
@@ -475,15 +480,20 @@ func applyFilterChain(value interface{}, chain string, data map[string]interface
 	return currentValue, nil
 }
 
-// The `parseFunctionArgs` function parses arguments for function calls
+// The `parseFunctionArgs` function parses arguments for function calls, now handling numeric literals
 func parseFunctionArgs(argString string, data map[string]interface{}) []interface{} {
 	var args []interface{}
 	strArgs := parseFilterArgs(argString)
 
 	for _, arg := range strArgs {
+		// 1. Attempting to resolve the argument as a context variable
 		if val, ok := getValueFromContext(arg, data); ok {
 			args = append(args, val)
+		} else if num, err := strconv.ParseFloat(arg, 64); err == nil {
+			// 2. If not a variable, checking if it is a numeric literal
+			args = append(args, num)
 		} else {
+			// 3. If not a variable or a number, treating it as a literal string
 			args = append(args, arg)
 		}
 	}
