@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go-java-pebble/filters"
 	"go-java-pebble/functions"
+	"go-java-pebble/tags"
 	"html"
 	"reflect"
 	"regexp"
@@ -61,20 +62,23 @@ func Lex(input string, data map[string]interface{}, engineConfig EngineConfig, s
 	reExtends := regexp.MustCompile(`(?s){%\s*extends\s+"[^"]+"\s*%}`)
 	output := reExtends.ReplaceAllString(input, "")
 
-	// 2. Second pass: Processing `embed` tags
+	// 2. Second pass: Processing `set` tags
+	output, data = tags.LexSet(output, data)
+
+	// 3. Third pass: Processing `embed` tags
 	output = lexEmbed(output, data, engineConfig, state)
 
-	// 3. Third pass: Processing `include` tags
+	// 4. Fourth pass: Processing `include` tags
 	output = lexInclude(output, data, engineConfig, state)
 
-	// 4. Fourth pass: Processing all other tags, now with inheritance context
+	// 5. Fifth pass: Processing all other tags, now with inheritance context
 	output = lexTags(output, data, engineConfig, state)
 
-	// 5. Fifth pass: Processing standard `if` and `for` blocks
+	// 6. Sixth pass: Processing standard `if` and `for` blocks
 	output = lexIf(output, data, engineConfig, state)
 	output = lexFor(output, data, engineConfig, state)
 
-	// 6. Final pass: Processing all `{{ ... }}` expressions
+	// 7. Final pass: Processing all `{{ ... }}` expressions
 	output = lexExpressions(output, data, engineConfig, state)
 
 	return output
@@ -215,7 +219,7 @@ func lexTags(input string, data map[string]interface{}, engineConfig EngineConfi
 		return renderedContent
 	})
 
-	// Process block tags only for non-embedded templates
+	// Processing the block tags only for non-embedded templates
 	// fmt.Printf("Blocks in Leaf template: %v\n", state.Leaf.Blocks()) // Debug
 	// The regular expression to find `{% block "name" %}...{% endblock %}`
 	reBlock := regexp.MustCompile(`(?s){%\s*block\s+"([^"]+)"\s*%}(.*?){%\s*endblock\s*%}`)
@@ -231,7 +235,7 @@ func lexTags(input string, data map[string]interface{}, engineConfig EngineConfi
 		// Checking if an overriding block from a child template exists
 		if overrideContent, hasOverride := state.Leaf.Blocks()[blockName]; hasOverride {
 			// Creating a new state for rendering the overridden content or this rendering context
-			// The "current" template is now the leaf, as we are rendering its content.
+			// The `current` template is now the leaf, as we are rendering its content
 			childState := &TemplateState{
 				Current:          state.Leaf,
 				Leaf:             state.Leaf,
@@ -800,8 +804,8 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 	// Splitting the path by the dot operator for the initial segmentation
 	// 01. Splitting the `path` by `.` to navigate nested maps
 	// 02. Splitting the `path` by the dot operator for initial segmentation
-	// A path like `user.Profile.URL` becomes ["user", "Profile", "URL"]
-	// A path like `colors[0]` becomes ["colors[0]"]
+	// A path like `user.Profile.URL` becomes `["user", "Profile", "URL"]`
+	// A path like `colors[0]` becomes `["colors[0]"]`
 	parts := strings.Split(path, ".")
 	var currentVal interface{} = data
 
@@ -820,7 +824,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 				v = v.Elem()
 			}
 
-			// Returning nil if the object is invalid (for example, a nil pointer)
+			// Returning `nil` if the object is invalid (for example, a `nil` pointer)
 			if !v.IsValid() {
 				return nil, false
 			}

@@ -787,52 +787,52 @@ func TestIncludeTag(t *testing.T) {
 // The `TestEmbedTag` function validates the `embed` tag
 func TestEmbedTag(t *testing.T) {
 	t.Log("--- Running Test Case: «Embed Tag» ---")
+
 	engine := pebble.NewEngine()
 
 	context := make(map[string]interface{})
 	context["product"] = map[string]string{"name": "Awesome Gadget", "description": "It's really awesome!"}
 
-	template, err := engine.GetTemplate("views/test_tag_embed.peb")
-
-	if err != nil {
-		t.Fatalf("«Failed to get template: %v»", err)
-	}
-
-	output, err := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
-	if err != nil {
-		t.Fatalf("«Failed to evaluate template: %v»", err)
-	}
+	template, _ := engine.GetTemplate("views/test_tag_embed.peb")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := `
-        <div class="card">
-            <h1>Awesome Gadget</h1>
-            <p>It's really awesome!</p>
-        </div>
-        <div class="card">
-            <a href="...">See all 100+ products</a>
-        </div>
-    `
+		<div class="card">
+			<h1>Awesome Gadget</h1>
+			<p>It's really awesome!</p>
+		</div>
+		<div class="card">
+			<a href="...">See all 100+ products</a>
+		</div>
+	`
 	normalizedOutput := strings.Join(strings.Fields(output), " ")
 	normalizedExpected := strings.Join(strings.Fields(expected), " ")
-
-	t.Logf("Normalized expected: %s", normalizedExpected)
-	t.Logf("Normalized actual: %s", normalizedOutput)
 
 	if normalizedOutput != normalizedExpected {
 		t.Errorf("«The `embed` tag failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
 	}
+}
 
-	if !strings.Contains(output, "<h1>Awesome Gadget</h1>") {
-		t.Error("«Expected <h1>Awesome Gadget</h1> in output»")
-	}
+// The `TestSetTag` function validates the `set` tag
+func TestSetTag(t *testing.T) {
+	t.Log("--- Running Test Case: «Set Tag» ---")
 
-	if !strings.Contains(output, "<p>It's really awesome!</p>") {
-		t.Error("«Expected <p>It's really awesome!</p> in output»")
-	}
+	engine := pebble.NewEngine()
+	template, _ := engine.GetTemplate("views/test_tag_set.peb")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
 
-	if !strings.Contains(output, "<a href=\"...\">See all 100+ products</a>") {
-		t.Error("«Expected <a href=\"...\">See all 100+ products</a> in output»")
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := `
+		<h1>Test Page</h1>
+		<p>Welcome, Benozzo!</p>
+	`
+	normalizedOutput := strings.Join(strings.Fields(output), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if normalizedOutput != normalizedExpected {
+		t.Errorf("«The `set` tag failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
 	}
 }

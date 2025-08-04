@@ -1,0 +1,5 @@
+{% set header = "Test Page" %}
+<h1>{{ header }}</h1>
+
+{% set user_name = "Benozzo" %}
+<p>Welcome, {{ user_name }}!</p>
