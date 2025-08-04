@@ -19,7 +19,7 @@ func runTest(engine *pebble.PebbleEngine, templatePath string, context map[strin
 	}
 
 	// Evaluating the template with the provided context, now passing the locale
-	output, err := compiledTemplate.EvaluateAndGetResult(context, "") // Using default locale
+	output, err := compiledTemplate.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using default locale
 
 	if err != nil {
 		log.Fatalf("«Error evaluating the template ‘%s’: %v»", templatePath, err)

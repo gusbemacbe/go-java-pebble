@@ -69,18 +69,21 @@ func NewEngine() *PebbleEngine {
 // The `SetAutoEscaping` is a builder method to configure auto-escaping
 func (e *PebbleEngine) SetAutoEscaping(auto bool) *PebbleEngine {
 	e.AutoEscaping = auto
+
 	return e
 }
 
 // The `SetDefaultLocale` is a builder method to configure the default locale
 func (e *PebbleEngine) SetDefaultLocale(locale string) *PebbleEngine {
 	e.DefaultLocale = locale
+
 	return e
 }
 
 // The `SetTagCache` is a builder method to provide a custom cache implementation
 func (e *PebbleEngine) SetTagCache(cache lexers.Cache) *PebbleEngine {
 	e.TagCache = cache
+
 	return e
 }
 
@@ -107,7 +110,7 @@ func (t *PebbleTemplate) Parent() lexers.Template {
 // The `GetBlock` method is a public accessor for a template's block
 func (t *PebbleTemplate) GetBlock(name string) string {
 	// Using a more concise single-value map lookup, which is idiomatic Go.
-	// If the key does not exist, this will correctly return the zero value for a string, which is "".
+	// If the key does not exist, this will correctly return the zero value for a string, which is `""`
 	return t.blocks[name]
 }
 
@@ -116,8 +119,13 @@ func (t *PebbleTemplate) Blocks() map[string]string {
 	return t.blocks
 }
 
+// The `Content` method is a public accessor for the template's content
+func (t *PebbleTemplate) Content() string {
+	return t.content
+}
+
 // The `GetTemplate` method retrieves and compiles a template from a given path, handling inheritance
-func (engine *PebbleEngine) GetTemplate(path string) (*PebbleTemplate, error) {
+func (engine *PebbleEngine) GetTemplate(path string) (lexers.Template, error) {
 	contentBytes, err := fs.ReadFile(path)
 
 	if err != nil {
@@ -146,7 +154,7 @@ func (engine *PebbleEngine) GetTemplate(path string) (*PebbleTemplate, error) {
 			return nil, fmt.Errorf("«failed to load parent template '%s': %w»", parentPath, err)
 		}
 
-		template.parent = parentTemplate
+		template.parent = parentTemplate.(*PebbleTemplate)
 	}
 
 	// Parsing and storing all blocks defined in this template
@@ -183,6 +191,7 @@ func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map
 		DefaultEscapingStrategy: template.engine.DefaultEscapingStrategy,
 		Locale:                  locale,
 		TagCache:                template.engine.TagCache,
+		Loader:                  template.engine,
 	}
 
 	// The lexer needs access to the template hierarchy to handle the `parent()` function
@@ -195,7 +204,7 @@ func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map
 
 	// Using the lexer to replace the placeholders with the actual data
 	// Passing the engine’s configuration to the lexer
-	output := lexers.Lex(template.content, context, config, state)
+	output := lexers.Lex(template.Content(), context, config, state)
 	_, err := writer.Write([]byte(output))
 
 	return err
@@ -204,6 +213,7 @@ func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map
 // The `EvaluateAndGetResult` method is a convenience function that evaluates a template and returns the result as a string
 func (template *PebbleTemplate) EvaluateAndGetResult(context map[string]interface{}, locale string) (string, error) {
 	var writer bytes.Buffer
+
 	// Using the default locale if a specific one is not provided
 	evalLocale := template.engine.DefaultLocale
 

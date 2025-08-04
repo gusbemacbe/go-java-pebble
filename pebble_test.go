@@ -13,12 +13,14 @@ func TestSimpleVariableReplacement(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["name"] = "Gus"
+
 	template, _ := engine.GetTemplate("views/test.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "Hello, Gus!"
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«Simple variable replacement failed. Expected to contain '%s'»", expected)
 	}
@@ -33,10 +35,12 @@ func TestComprehensiveBlocks(t *testing.T) {
 	adminContext := make(map[string]interface{})
 	adminContext["user"] = map[string]interface{}{"name": "Administrator", "isAdmin": true}
 	adminContext["items"] = []string{"Dashboard", "Users"}
+
 	template, _ := engine.GetTemplate("views/test.pebble")
-	adminOutput, _ := template.EvaluateAndGetResult(adminContext, "") // Using default locale
+	adminOutput, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(adminContext, "") // Using default locale
 
 	t.Logf("Rendered output (Admin):\n%s", adminOutput)
+
 	if !strings.Contains(adminOutput, "<h1>Welcome, administrator!</h1>") {
 		t.Errorf("«'if' block failed for admin user»")
 	}
@@ -49,9 +53,10 @@ func TestComprehensiveBlocks(t *testing.T) {
 	userContext := make(map[string]interface{})
 	userContext["user"] = map[string]interface{}{"name": "Gus", "isAdmin": false}
 	userContext["items"] = []string{"Profile", "Messages"}
-	userOutput, _ := template.EvaluateAndGetResult(userContext, "") // Using default locale
+	userOutput, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(userContext, "") // Using default locale
 
 	t.Logf("Rendered output (User):\n%s", userOutput)
+
 	if !strings.Contains(userOutput, "<h1>Welcome, Gus!</h1>") {
 		t.Errorf("«'else' block failed for regular user»")
 	}
@@ -69,8 +74,9 @@ func TestBlockStatementsDelimiter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["user"] = map[string]interface{}{"name": "Benozzo", "isAdmin": true}
 	context["colors"] = []string{"Red", "Green", "Blue"}
+
 	template, _ := engine.GetTemplate("views/test_block_statements_delimiter.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -89,6 +95,7 @@ func TestAttributeAccess(t *testing.T) {
 
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
+
 	context["user"] = pebble.User{
 		Name:    "Benozzo",
 		Age:     30,
@@ -98,8 +105,9 @@ func TestAttributeAccess(t *testing.T) {
 	context["settings"] = map[string]string{"theme": "dark", "font-family": "DejaVu Sans Mono"}
 	context["colors"] = []string{"Orange", "Cyan", "Magenta"}
 	context["nilObject"] = nil
+
 	template, _ := engine.GetTemplate("views/test_attributes.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -124,7 +132,7 @@ func TestAttributeAccess(t *testing.T) {
 func TestFilters(t *testing.T) {
 	t.Log("--- Running Test Case: «Template Filters» ---")
 
-	// Creating a new instance of the PebbleEngine
+	// Creating a new instance of the `PebbleEngine`
 	engine := pebble.NewEngine()
 
 	// Creating the context for the filter test
@@ -143,7 +151,8 @@ func TestFilters(t *testing.T) {
 	}
 
 	// Evaluating the template with the provided context
-	output, err := compiledTemplate.EvaluateAndGetResult(filterContext, "") // Using the default locale
+	output, err := compiledTemplate.(*pebble.PebbleTemplate).EvaluateAndGetResult(filterContext, "") // Using the default locale
+
 	if err != nil {
 		t.Fatalf("«Error evaluating template 'views/test_filters.peb': %v»", err)
 	}
@@ -185,7 +194,7 @@ func TestEscapeFilter(t *testing.T) {
 		t.Fatalf("«Failed to get template: %v»", err)
 	}
 
-	output, err := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, err := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	if err != nil {
 		t.Fatalf("«Failed to evaluate template: %v»", err)
@@ -210,13 +219,14 @@ func TestEscapeFilter(t *testing.T) {
 		t.Fatalf("«Failed to get template: %v»", err)
 	}
 
-	output, err = template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, err = template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	if err != nil {
 		t.Fatalf("«Failed to evaluate template: %v»", err)
 	}
 
 	t.Logf("Output (Auto-escaping ON):\n%s", output)
+
 	if !strings.Contains(output, "HTML should be escaped: &lt;div&gt;") {
 		t.Error("«Auto-escaping for HTML failed»")
 	}
@@ -240,8 +250,9 @@ func TestFirstFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
+
 	template, _ := engine.GetTemplate("views/test_filter_first.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -260,8 +271,9 @@ func TestLastFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
+
 	template, _ := engine.GetTemplate("views/test_filter_last.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -278,8 +290,9 @@ func TestLastFilter(t *testing.T) {
 func TestLowerFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Lower Filter» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_filter_lower.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -294,8 +307,9 @@ func TestLowerFilter(t *testing.T) {
 func TestTitleFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Title Filter» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_filter_title.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -312,12 +326,14 @@ func TestReverseFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
+
 	template, _ := engine.GetTemplate("views/test_filter_reverse.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "Bob Joe Alex "
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `reverse` filter failed. Expected '%s'»", expected)
 	}
@@ -329,12 +345,14 @@ func TestSortFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Joe", "Alex", "Bob"}
+
 	template, _ := engine.GetTemplate("views/test_filter_sort.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "Alex Bob Joe "
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `sort` filter failed. Expected '%s'»", expected)
 	}
@@ -347,8 +365,9 @@ func TestRsortFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["users"] = []string{"Joe", "Alex", "Bob"}
+
 	template, _ := engine.GetTemplate("views/test_filter_rsort.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -366,8 +385,9 @@ func TestLengthFilter(t *testing.T) {
 	context := make(map[string]interface{})
 	context["users"] = []string{"Alex", "Joe", "Bob"}
 	context["settings"] = map[string]string{"a": "1", "b": "2"}
+
 	template, _ := engine.GetTemplate("views/test_filter_length.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -388,8 +408,9 @@ func TestLengthFilter(t *testing.T) {
 func TestNumberFormatFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Number Format Filter» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_filter_numberformat.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -406,12 +427,14 @@ func TestReplaceFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["foo"] = "baz"
+
 	template, _ := engine.GetTemplate("views/test_filter_replace.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "I like baz and bar."
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `replace` filter failed. Expected '%s'»", expected)
 	}
@@ -424,14 +447,16 @@ func TestSliceFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["items"] = []string{"apple", "peach", "pear", "banana"}
+
 	template, _ := engine.GetTemplate("views/test_filter_slice.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
 	if !strings.Contains(output, "Slice of a list: peach pear ") {
 		t.Errorf("«The `slice` filter failed on a collection»")
 	}
+
 	if !strings.Contains(output, "Slice of a string: it") {
 		t.Errorf("«The `slice` filter failed on a string»")
 	}
@@ -442,12 +467,13 @@ func TestSplitFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Split Filter» ---")
 
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_filter_split.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
 
 	t.Logf("Rendered output:\n%s", output)
 
-	// Making the assertions more specific to avoid false positives
+	// Making the assertions more specific to avoid the false positives
 	expectedSimple := "Simple split: one;two;three;"
 
 	if !strings.Contains(output, expectedSimple) {
@@ -465,12 +491,14 @@ func TestSplitFilter(t *testing.T) {
 func TestSha256Filter(t *testing.T) {
 	t.Log("--- Running Test Case: «SHA256 Filter» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_filter_sha256.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "SHA256 of \"test\": 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `sha256` filter failed. Expected to find '%s'»", expected)
 	}
@@ -480,12 +508,14 @@ func TestSha256Filter(t *testing.T) {
 func TestUrlEncodeFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «URL Encode Filter» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_filter_urlencode.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "URLEncoded string: The+string+%C3%BC%40foo-bar"
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `urlencode` filter failed. Expected to find '%s'»", expected)
 	}
@@ -495,12 +525,14 @@ func TestUrlEncodeFilter(t *testing.T) {
 func TestTrimFilter(t *testing.T) {
 	t.Log("--- Running Test Case: «Trim Filter» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_filter_trim.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "Trimmed string: «This text has too much whitespace.»"
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `trim` filter failed. Expected to find '%s'»", expected)
 	}
@@ -512,8 +544,9 @@ func TestJoinFilter(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["names"] = []string{"Alex", "Joe", "Bob"}
+
 	template, _ := engine.GetTemplate("views/test_filter_join.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -526,12 +559,13 @@ func TestJoinFilter(t *testing.T) {
 	}
 }
 
-// The TestBlockFunction function validates the `block` tag and function
+// The `TestBlockFunction` function validates the `block` tag and function
 func TestBlockFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «Block Tag and Function» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_function_block.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -545,12 +579,13 @@ func TestBlockFunction(t *testing.T) {
 	}
 }
 
-// The TestFlushTag function validates the parsing of the `flush` tag
+// The `TestFlushTag` function validates the parsing of the `flush` tag
 func TestFlushTag(t *testing.T) {
 	t.Log("--- Running Test Case: «Flush Tag» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_tag_flush.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -569,22 +604,27 @@ func TestI18nFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «i18n Function» ---")
 
 	// Testing with the default locale (English)
-	engine := pebble.NewEngine() // The default locale is "" which falls back to the base `messages.properties`
+	engine := pebble.NewEngine() // The default locale is "" which falls back to the base `messages.properties`.
+
 	template, _ := engine.GetTemplate("views/test_function_i18n.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "") // Explicitly passing no locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "") // Explicitly passing no locale.
 
 	t.Logf("Rendered output (Default Locale):\n%s", output)
+
 	if !strings.Contains(output, "Default locale greeting: Hello") {
 		t.Errorf("«i18n failed for the default locale»")
 	}
+
 	if !strings.Contains(output, "Greeting with a name: Hello, Jacob") {
 		t.Errorf("«i18n with parameter substitution failed for the default locale»")
 	}
 
 	// Testing with a locale override (Spanish)
 	// The locale passed to `EvaluateAndGetResult` should take precedence
-	spanishOutput, _ := template.EvaluateAndGetResult(nil, "es_ES")
+	spanishOutput, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "es_ES")
+
 	t.Logf("Rendered output (Spanish Locale):\n%s", spanishOutput)
+
 	if !strings.Contains(spanishOutput, "Spanish locale farewell: Adiós") {
 		t.Errorf("«i18n failed for the Spanish locale override»")
 	}
@@ -596,12 +636,14 @@ func TestMaxFunction(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["user"] = map[string]interface{}{"score": 60}
+
 	template, _ := engine.GetTemplate("views/test_function_max.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
 	expected := "The maximum value is: 80"
+
 	if !strings.Contains(output, expected) {
 		t.Errorf("«The `max` function failed. Expected to find '%s'»", expected)
 	}
@@ -614,8 +656,9 @@ func TestMinFunction(t *testing.T) {
 	engine := pebble.NewEngine()
 	context := make(map[string]interface{})
 	context["user"] = map[string]interface{}{"score": 60}
+
 	template, _ := engine.GetTemplate("views/test_function_min.peb")
-	output, _ := template.EvaluateAndGetResult(context, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
@@ -638,7 +681,7 @@ func TestTemplateInheritance(t *testing.T) {
 		t.Fatalf("«Failed to get child template: %v»", err)
 	}
 
-	output, err := template.EvaluateAndGetResult(nil, "") // Using the default locale
+	output, err := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "") // Using the default locale
 
 	if err != nil {
 		t.Fatalf("«Failed to evaluate template: %v»", err)
@@ -669,14 +712,16 @@ func TestTemplateInheritance(t *testing.T) {
 func TestCacheTag(t *testing.T) {
 	t.Log("--- Running Test Case: «Cache Tag» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_tag_cache.peb")
 
 	// --- First Render ---
 	context1 := make(map[string]interface{})
 	context1["counter"] = 1
-	output1, _ := template.EvaluateAndGetResult(context1, "")
+	output1, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context1, "")
 
 	t.Logf("Rendered output (first pass):\n%s", output1)
+
 	if !strings.Contains(output1, "Render count: 1") {
 		t.Errorf("«Cache block failed to render correctly on the first pass»")
 	}
@@ -685,9 +730,10 @@ func TestCacheTag(t *testing.T) {
 	// The counter is now different, but the output should be the same because it is cached
 	context2 := make(map[string]interface{})
 	context2["counter"] = 999
-	output2, _ := template.EvaluateAndGetResult(context2, "")
+	output2, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context2, "")
 
 	t.Logf("Rendered output (second pass):\n%s", output2)
+
 	if !strings.Contains(output2, "Render count: 1") {
 		t.Errorf("«Cache block was not served from cache on the second pass»")
 	}
@@ -697,18 +743,96 @@ func TestCacheTag(t *testing.T) {
 func TestRangeFunction(t *testing.T) {
 	t.Log("--- Running Test Case: «Range Function and Operator» ---")
 	engine := pebble.NewEngine()
+
 	template, _ := engine.GetTemplate("views/test_function_range.peb")
-	output, _ := template.EvaluateAndGetResult(nil, "") // Using the default locale
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "") // Using the default locale
 
 	t.Logf("Rendered output:\n%s", output)
 
 	if !strings.Contains(output, "Simple range function: 0, 1, 2, 3,") {
 		t.Errorf("«The `range` function failed for the simple case»")
 	}
+
 	if !strings.Contains(output, "Range with step: 0, 2, 4, 6,") {
 		t.Errorf("«The `range` function failed with a step»")
 	}
+
 	if !strings.Contains(output, "Range operator: 0, 1, 2, 3,") {
 		t.Errorf("«The `..` range operator failed»")
+	}
+}
+
+// The `TestIncludeTag` function validates the `include` tag
+func TestIncludeTag(t *testing.T) {
+	t.Log("--- Running Test Case: «Include Tag» ---")
+
+	engine := pebble.NewEngine()
+	context := make(map[string]interface{})
+	context["username"] = "Benozzo"
+
+	template, _ := engine.GetTemplate("views/test_tag_include.peb")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
+
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := "This is the main template.\nIncluded content: Hello, Benozzo!\nBack in the main template."
+	normalizedOutput := strings.Join(strings.Fields(output), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if normalizedOutput != normalizedExpected {
+		t.Errorf("«The `include` tag failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
+	}
+}
+
+// The `TestEmbedTag` function validates the `embed` tag
+func TestEmbedTag(t *testing.T) {
+	t.Log("--- Running Test Case: «Embed Tag» ---")
+	engine := pebble.NewEngine()
+
+	context := make(map[string]interface{})
+	context["product"] = map[string]string{"name": "Awesome Gadget", "description": "It's really awesome!"}
+
+	template, err := engine.GetTemplate("views/test_tag_embed.peb")
+
+	if err != nil {
+		t.Fatalf("«Failed to get template: %v»", err)
+	}
+
+	output, err := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
+	if err != nil {
+		t.Fatalf("«Failed to evaluate template: %v»", err)
+	}
+
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := `
+        <div class="card">
+            <h1>Awesome Gadget</h1>
+            <p>It's really awesome!</p>
+        </div>
+        <div class="card">
+            <a href="...">See all 100+ products</a>
+        </div>
+    `
+	normalizedOutput := strings.Join(strings.Fields(output), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	t.Logf("Normalized expected: %s", normalizedExpected)
+	t.Logf("Normalized actual: %s", normalizedOutput)
+
+	if normalizedOutput != normalizedExpected {
+		t.Errorf("«The `embed` tag failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
+	}
+
+	if !strings.Contains(output, "<h1>Awesome Gadget</h1>") {
+		t.Error("«Expected <h1>Awesome Gadget</h1> in output»")
+	}
+
+	if !strings.Contains(output, "<p>It's really awesome!</p>") {
+		t.Error("«Expected <p>It's really awesome!</p> in output»")
+	}
+
+	if !strings.Contains(output, "<a href=\"...\">See all 100+ products</a>") {
+		t.Error("«Expected <a href=\"...\">See all 100+ products</a> in output»")
 	}
 }

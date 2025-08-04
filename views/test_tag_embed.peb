@@ -1,0 +1,12 @@
+{% embed "views/card.peb" %}
+    {% block cardContent %}
+        <h1>{{ product.name }}</h1>
+        <p>{{ product.description | raw }}</p>
+    {% endblock %}
+{% endembed %}
+
+{% embed "views/card.peb" %}
+    {% block cardContent %}
+        <a href="...">See all 100+ products</a>
+    {% endblock %}
+{% endembed %}
