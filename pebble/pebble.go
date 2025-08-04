@@ -3,6 +3,7 @@ package pebble
 import (
 	"bytes"
 	"fmt"
+	"go-java-pebble/common"
 	"go-java-pebble/fs"
 	"go-java-pebble/lexers"
 	"io"
@@ -51,7 +52,7 @@ type PebbleEngine struct {
 	// The `DefaultLocale` sets the default locale for the `i18n` function
 	DefaultLocale string
 	// The `TagCache` provides a cache for the `{% cache %}` tag
-	TagCache lexers.Cache
+	TagCache common.Cache
 }
 
 // The `NewEngine` function is a constructor for the `PebbleEngine`
@@ -69,21 +70,18 @@ func NewEngine() *PebbleEngine {
 // The `SetAutoEscaping` is a builder method to configure auto-escaping
 func (e *PebbleEngine) SetAutoEscaping(auto bool) *PebbleEngine {
 	e.AutoEscaping = auto
-
 	return e
 }
 
 // The `SetDefaultLocale` is a builder method to configure the default locale
 func (e *PebbleEngine) SetDefaultLocale(locale string) *PebbleEngine {
 	e.DefaultLocale = locale
-
 	return e
 }
 
 // The `SetTagCache` is a builder method to provide a custom cache implementation
-func (e *PebbleEngine) SetTagCache(cache lexers.Cache) *PebbleEngine {
+func (e *PebbleEngine) SetTagCache(cache common.Cache) *PebbleEngine {
 	e.TagCache = cache
-
 	return e
 }
 
@@ -98,13 +96,12 @@ type PebbleTemplate struct {
 	blocks map[string]string
 }
 
-// The `Parent` method is a public accessor for the parent template, returning the `lexers.Template` interface
-func (t *PebbleTemplate) Parent() lexers.Template {
+// The `Parent` method is a public accessor for the parent template, returning the `common.Template` interface
+func (t *PebbleTemplate) Parent() common.Template {
 	if t.parent == nil {
 		return nil
 	}
-
-	return t.parent // The `PebbleTemplate` implements the `lexers.Template` interface
+	return t.parent // The `PebbleTemplate` implements the `common.Template` interface
 }
 
 // The `GetBlock` method is a public accessor for a template's block
@@ -125,9 +122,8 @@ func (t *PebbleTemplate) Content() string {
 }
 
 // The `GetTemplate` method retrieves and compiles a template from a given path, handling inheritance
-func (engine *PebbleEngine) GetTemplate(path string) (lexers.Template, error) {
+func (engine *PebbleEngine) GetTemplate(path string) (common.Template, error) {
 	contentBytes, err := fs.ReadFile(path)
-
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +145,6 @@ func (engine *PebbleEngine) GetTemplate(path string) (lexers.Template, error) {
 
 		// Recursively loading the parent template
 		parentTemplate, err := engine.GetTemplate(parentPath)
-
 		if err != nil {
 			return nil, fmt.Errorf("«failed to load parent template '%s': %w»", parentPath, err)
 		}
@@ -184,8 +179,8 @@ func (template *PebbleTemplate) Evaluate(writer io.Writer, context map[string]in
 }
 
 // The `evaluateWithBlocks` is the internal rendering method that uses the blocks from a specific leaf template
-func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map[string]interface{}, locale string, leaf lexers.Template) error {
-	config := lexers.EngineConfig{
+func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map[string]interface{}, locale string, leaf common.Template) error {
+	config := common.EngineConfig{
 		StrictVariables:         template.engine.StrictVariables,
 		AutoEscaping:            template.engine.AutoEscaping,
 		DefaultEscapingStrategy: template.engine.DefaultEscapingStrategy,
@@ -197,7 +192,7 @@ func (template *PebbleTemplate) evaluateWithBlocks(writer io.Writer, context map
 	// The lexer needs access to the template hierarchy to handle the `parent()` function
 	// `Current` is the template whose content is being rendered
 	// `Leaf` is the final child in the inheritance chain, whose blocks take precedence
-	state := &lexers.TemplateState{
+	state := &common.TemplateState{
 		Current: template,
 		Leaf:    leaf,
 	}
@@ -216,13 +211,11 @@ func (template *PebbleTemplate) EvaluateAndGetResult(context map[string]interfac
 
 	// Using the default locale if a specific one is not provided
 	evalLocale := template.engine.DefaultLocale
-
 	if locale != "" {
 		evalLocale = locale
 	}
 
 	err := template.Evaluate(&writer, context, evalLocale)
-
 	if err != nil {
 		return "", err
 	}

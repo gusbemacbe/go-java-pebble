@@ -2,265 +2,87 @@ package lexers
 
 import (
 	"fmt"
+	"go-java-pebble/common"
 	"go-java-pebble/filters"
 	"go-java-pebble/functions"
 	"go-java-pebble/tags"
-	"html"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-// The `Cache` interface defines the contract for a generic key-value cache
-type Cache interface {
-	Get(key string) (interface{}, bool)
-	Set(key string, value interface{})
-}
-
-// The `Loader` interface defines the contract for loading templates.
-type Loader interface {
-	GetTemplate(path string) (Template, error)
-}
-
-// The `EngineConfig` struct passes down the engine-wide settings to the lexer
-type EngineConfig struct {
-	StrictVariables         bool
-	AutoEscaping            bool
-	DefaultEscapingStrategy string
-	Locale                  string
-	TagCache                Cache
-	Loader                  Loader
-}
-
-// The `Template` interface defines the contract that the lexer needs to interact with a template,
-// breaking the circular dependency between the `lexers` and `pebble` packages.
-type Template interface {
-	Parent() Template
-	GetBlock(name string) string
-	Blocks() map[string]string
-	Content() string
-}
-
-// The `TemplateState` struct holds state specific to a single template rendering, such as the content of declared blocks.
-type TemplateState struct {
-	// The `Current` template whose content is actively being parsed
-	Current Template
-	// The `Leaf` template is the child-most template in an inheritance chain. Its blocks take precedence.
-	Leaf Template
-	// The `currentBlockName` tracks which block is currently being rendered, crucial for `parent()`
-	currentBlockName string
-}
-
 // The `pathSegmentRegex` is used to tokenise an access path like `user.profile["url"]`
 var pathSegmentRegex = regexp.MustCompile(`(\w+)|\["([^"]+)"\]|\[(\d+)\]`)
 
-// The `Lex` function performs the lexical analysis and replacement of the Pebble expressions.
-// The order of operations is critical.
-func Lex(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
-	// 1. First pass: Hiding the `extends` tag as it has already been processed by the engine
+// The `Lex` function performs the lexical analysis and replacement of the Pebble expressions
+// The order of operations is critical
+func Lex(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState) string {
+	// Processing the `extends` tag first, hiding it as it has already been handled by the engine
 	reExtends := regexp.MustCompile(`(?s){%\s*extends\s+"[^"]+"\s*%}`)
 	output := reExtends.ReplaceAllString(input, "")
 
-	// 2. Second pass: Processing `set` tags
-	output, data = tags.LexSet(output, data)
+	// Processing the `set` tags, updating the context with new variables
+	output, data = lexSet(output, data)
 
-	// 3. Third pass: Processing `embed` tags
-	output = lexEmbed(output, data, engineConfig, state)
-
-	// 4. Fourth pass: Processing `include` tags
-	output = lexInclude(output, data, engineConfig, state)
-
-	// 5. Fifth pass: Processing all other tags, now with inheritance context
+	// Processing all tags (cache, flush, include, embed, block)
 	output = lexTags(output, data, engineConfig, state)
 
-	// 6. Sixth pass: Processing standard `if` and `for` blocks
+	// Processing standard `if` and `for` blocks
 	output = lexIf(output, data, engineConfig, state)
 	output = lexFor(output, data, engineConfig, state)
 
-	// 7. Final pass: Processing all `{{ ... }}` expressions
+	// Processing all `{{ ... }}` expressions
 	output = lexExpressions(output, data, engineConfig, state)
 
 	return output
 }
 
-// The `lexInclude` function processes `include` tags
-func lexInclude(input string, data map[string]interface{}, engineConfig EngineConfig, _ *TemplateState) string {
-	re := regexp.MustCompile(`(?s){%\s*include\s+("([^"]+)"|([a-zA-Z0-9_.-]+))(?:\s+with\s+({.*?}))?\s*%}`)
+// The `lexTags` function handles the processing of tags, delegating to the tags package
+func lexTags(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState) string {
+	// Delegating tag processing to the `tags` package
+	return tags.Apply(input, data, engineConfig, state, Lex)
+}
 
-	return re.ReplaceAllStringFunc(input, func(match string) string {
+// The `lexSet` function processes `{% set %}` tags, updating the context with new variables
+func lexSet(input string, data map[string]interface{}) (string, map[string]interface{}) {
+	re := regexp.MustCompile(`(?s){%\s*set\s+(\w+)\s*=\s*(.*?)\s*%}`)
+
+	// Creating a new map to avoid modifying the original data map directly during iteration
+	newData := make(map[string]interface{})
+	for k, v := range data {
+		newData[k] = v
+	}
+
+	// The output variable will hold the template content with `{% set %}` tags removed
+	output := re.ReplaceAllStringFunc(input, func(match string) string {
 		submatches := re.FindStringSubmatch(match)
+		varName := submatches[1]
+		valueStr := strings.TrimSpace(submatches[2])
 
-		templatePath := submatches[2]
-
-		if templatePath == "" {
-			// It is a variable
-			if val, ok := getValueFromContext(submatches[3], data); ok {
-				templatePath = fmt.Sprintf("%v", val)
+		// Checking if the value is a string literal
+		if (strings.HasPrefix(valueStr, `"`) && strings.HasSuffix(valueStr, `"`)) || (strings.HasPrefix(valueStr, `'`) && strings.HasSuffix(valueStr, `'`)) {
+			newData[varName] = valueStr[1 : len(valueStr)-1]
+		} else {
+			// If not a string literal, it is treated as a variable
+			if val, ok := newData[valueStr]; ok {
+				newData[varName] = val
 			} else {
-				return fmt.Sprintf("[ERROR: template name variable '%s' not found]", submatches[3])
+				// In a more complete implementation, this would also handle numbers, booleans, etc.
+				// For now, we assume it is another variable
+				newData[varName] = valueStr
 			}
 		}
 
-		// withMapStr := submatches[4] // The `with` keyword is not implemented yet.
-
-		includedTemplate, err := engineConfig.Loader.GetTemplate(templatePath)
-
-		if err != nil {
-			return fmt.Sprintf("[ERROR: failed to load include template '%s': %v]", templatePath, err)
-		}
-
-		newContext := data
-
-		newState := &TemplateState{
-			Current: includedTemplate,
-			Leaf:    includedTemplate,
-		}
-
-		return Lex(includedTemplate.Content(), newContext, engineConfig, newState)
-	})
-}
-
-// The `lexEmbed` function processes `embed` tags
-func lexEmbed(input string, data map[string]interface{}, engineConfig EngineConfig, _ *TemplateState) string {
-	re := regexp.MustCompile(`(?s){%\s*embed\s+"([^"]+)"(?:\s+with\s+({.*?}))?\s*%}(.*?){%\s*endembed\s*%}`)
-
-	return re.ReplaceAllStringFunc(input, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
-		templatePath := submatches[1]
-		body := submatches[3]
-
-		// fmt.Printf("Processing embed for template: %s\n", templatePath) // Debug
-		// fmt.Printf("Embed body (raw): %q\n", body) // Debug
-
-		// Load the embedded template
-		loadedTemplate, err := engineConfig.Loader.GetTemplate(templatePath)
-
-		if err != nil {
-			return fmt.Sprintf("[ERROR: failed to load embed template '%s': %v]", templatePath, err)
-		}
-
-		// Parse blocks from the embed body
-		overrideBlocks := make(map[string]string)
-		reBlockInBody := regexp.MustCompile(`(?s){%\s*block\s+([^\s%}]+)\s*%}\s*(.*?)\s*{%\s*endblock\s*%}`)
-		bodyMatches := reBlockInBody.FindAllStringSubmatch(body, -1)
-
-		if len(bodyMatches) == 0 {
-			fmt.Printf("No override blocks found in embed body. Regex: %s\n", reBlockInBody.String())
-			fmt.Printf("Body content for regex testing (raw): %q\n", body)
-		}
-		for _, blockMatch := range bodyMatches {
-			blockName := blockMatch[1]
-			blockContent := strings.TrimSpace(blockMatch[2])
-			overrideBlocks[blockName] = blockContent
-			// fmt.Printf("Override block '%s': %q\n", blockName, blockContent) // Debuf
-		}
-
-		// Get the content of the template to be embedded
-		embeddedContent := loadedTemplate.Content()
-		// fmt.Printf("Embedded template content: %q\n", embeddedContent) // Debuf
-
-		// Replace blocks in the embedded content with overrides
-		reBlockInTemplate := regexp.MustCompile(`(?s){%\s*block\s+([^\s%}]+)\s*%}\s*(.*?)\s*{%\s*endblock\s*%}`)
-		finalContent := reBlockInTemplate.ReplaceAllStringFunc(embeddedContent, func(blockMatch string) string {
-			submatches := reBlockInTemplate.FindStringSubmatch(blockMatch)
-			blockName := submatches[1]
-			defaultContent := submatches[2]
-
-			if override, ok := overrideBlocks[blockName]; ok {
-				// fmt.Printf("Replacing block '%s' with: %q\n", blockName, override) // Debug
-				return override
-			}
-
-			fmt.Printf("No override for block '%s', using default: %q\n", blockName, defaultContent)
-			return defaultContent
-		})
-
-		// fmt.Printf("Final content before lexing: %q\n", finalContent) // Debug
-
-		// Create a new state for rendering the embedded content
-		newState := &TemplateState{
-			Current: loadedTemplate,
-			Leaf:    loadedTemplate,
-		}
-
-		// Recursively lex the final content with original config
-		return Lex(finalContent, data, engineConfig, newState)
-	})
-}
-
-// The `lexTags` function handles the processing of tags, now with inheritance and caching logic
-func lexTags(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
-	// Processing `cache` tags first
-	reCache := regexp.MustCompile(`(?s){%\s*cache\s+'([^']+)'\s*%}(.*?){%\s*endcache\s*%}`)
-	output := reCache.ReplaceAllStringFunc(input, func(match string) string {
-		submatches := reCache.FindStringSubmatch(match)
-		cacheName := submatches[1]
-		content := submatches[2]
-
-		// Constructing the cache key from the name and locale
-		cacheKey := fmt.Sprintf("%s_%s", cacheName, engineConfig.Locale)
-
-		if engineConfig.TagCache != nil {
-			if cached, found := engineConfig.TagCache.Get(cacheKey); found {
-				// If found in cache, returning the cached content
-				return fmt.Sprintf("%v", cached)
-			}
-		}
-
-		// If not in cache, rendering the content
-		renderedContent := Lex(content, data, engineConfig, state)
-
-		if engineConfig.TagCache != nil {
-			// Storing the newly rendered content in the cache
-			engineConfig.TagCache.Set(cacheKey, renderedContent)
-		}
-
-		return renderedContent
+		// The `set` tag does not render any output
+		return ""
 	})
 
-	// Processing the block tags only for non-embedded templates
-	// fmt.Printf("Blocks in Leaf template: %v\n", state.Leaf.Blocks()) // Debug
-	// The regular expression to find `{% block "name" %}...{% endblock %}`
-	reBlock := regexp.MustCompile(`(?s){%\s*block\s+"([^"]+)"\s*%}(.*?){%\s*endblock\s*%}`)
-
-	// Finding all block definitions, storing their content, and replacing the tag with the content
-	output = reBlock.ReplaceAllStringFunc(output, func(match string) string {
-		submatches := reBlock.FindStringSubmatch(match)
-		blockName := submatches[1]
-		defaultContent := submatches[2]
-
-		// Using the blocks from the leaf-most template in the inheritance chain
-		// Checking if the template has an override for this block
-		// Checking if an overriding block from a child template exists
-		if overrideContent, hasOverride := state.Leaf.Blocks()[blockName]; hasOverride {
-			// Creating a new state for rendering the overridden content or this rendering context
-			// The `current` template is now the leaf, as we are rendering its content
-			childState := &TemplateState{
-				Current:          state.Leaf,
-				Leaf:             state.Leaf,
-				currentBlockName: blockName,
-			}
-
-			// Recursively rendering the child’s block content
-			return Lex(overrideContent, data, engineConfig, childState)
-		}
-
-		// If there is no override, rendering this template's own block content
-		// Rendering the default block content
-		return Lex(defaultContent, data, engineConfig, state)
-	})
-
-	// Processing the flush tags
-	// The regular expression to find and simply remove `{% flush %}` tags, as they have no effect in our in-memory model
-	reFlush := regexp.MustCompile(`(?s){%\s*flush\s*%}`)
-	output = reFlush.ReplaceAllString(output, "")
-
-	return output
+	return output, newData
 }
 
 // The `lexExpressions` function is the unified processor for all `{{ ... }}` expressions
-func lexExpressions(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
+func lexExpressions(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState) string {
 	re := regexp.MustCompile(`{{\s*(.*?)\s*}}`)
 
 	return re.ReplaceAllStringFunc(input, func(match string) string {
@@ -278,18 +100,18 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 
 			// Special handling for the `parent()` function
 			if functionName == "parent" {
-				// The `state.Current` is the template that defined the block where `parent()` is being called.
-				// Its parent is the one we need to get the original block from.
+				// The `state.Current` is the template that defined the block where `parent()` is being called
+				// Its parent is the one we need to get the original block from
 				if state.Current != nil && state.Current.Parent() != nil {
 					// Getting the parent's original content for the current block
-					parentContent := state.Current.Parent().GetBlock(state.currentBlockName)
+					parentContent := state.Current.Parent().GetBlock(state.CurrentBlockName)
 
-					// Creating a new state for the parent's context to avoid mutation.
-					// The `current` template for this render becomes the parent.
-					parentState := &TemplateState{
+					// Creating a new state for the parent's context to avoid mutation
+					// The `current` template for this render becomes the parent
+					parentState := &common.TemplateState{
 						Current:          state.Current.Parent(),
 						Leaf:             state.Leaf,
-						currentBlockName: state.currentBlockName,
+						CurrentBlockName: state.CurrentBlockName,
 					}
 
 					// Recursively rendering the parent's block content
@@ -349,7 +171,7 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 			initialValue = num
 			exists = true
 		} else {
-			initialValue, exists = getValueFromContext(variablePart, data)
+			initialValue, exists = GetValueFromContext(variablePart, data)
 		}
 
 		reDefault := regexp.MustCompile(`default\s*\(([^)]+)\)`)
@@ -420,7 +242,11 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 		// Applying the auto-escaping if needed
 		if engineConfig.AutoEscaping && !hasRaw && !hasEscape {
 			// fmt.Printf("Auto-escaping value: %q\n", result) // Debug
-			return html.EscapeString(result)
+			escaped, err := filters.Apply(result, "escape", []interface{}{engineConfig.DefaultEscapingStrategy})
+			if err != nil {
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
+			}
+			return escaped.(string)
 		}
 
 		// fmt.Printf("Returning unescaped value: %q\n", result) // Debug
@@ -429,7 +255,7 @@ func lexExpressions(input string, data map[string]interface{}, engineConfig Engi
 }
 
 // The `lexIf` function now recursively calls `Lex` to process nested content
-func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
+func lexIf(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState) string {
 	re := regexp.MustCompile(`(?s){%\s*if\s+(.*?)\s*%}(.*?)(?:{%\s*else\s*%}(.*?))?{%\s*endif\s*%}`)
 
 	return re.ReplaceAllStringFunc(input, func(match string) string {
@@ -439,7 +265,7 @@ func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig,
 		elseBlock := submatches[3] // This may be empty
 
 		// Evaluating the condition
-		val, exists := getValueFromContext(conditionKey, data)
+		val, exists := GetValueFromContext(conditionKey, data)
 
 		// If the variable for the condition does not exist
 		if !exists {
@@ -471,7 +297,7 @@ func lexIf(input string, data map[string]interface{}, engineConfig EngineConfig,
 
 // The `lexFor` function now recursively calls `Lex` to process the loop body
 // The `lexFor` function processes `for` loops, including those with filters and the range operator
-func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig, state *TemplateState) string {
+func lexFor(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState) string {
 	// Defining the regular expression to find `for-endfor` blocks
 	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(.*?)\s*%}(.*?){%\s*endfor\s*%}`)
 
@@ -551,7 +377,7 @@ func lexFor(input string, data map[string]interface{}, engineConfig EngineConfig
 				exists = true
 			} else {
 				// Otherwise, resolving it from the context
-				collection, exists = getValueFromContext(variablePart, data)
+				collection, exists = GetValueFromContext(variablePart, data)
 			}
 
 			// If the collection does not exist, the loop renders nothing
@@ -605,7 +431,7 @@ func resolveNumeric(s string, data map[string]interface{}) (int64, error) {
 	}
 
 	// If it fails, attempting to resolve as a variable from the context
-	if val, ok := getValueFromContext(s, data); ok {
+	if val, ok := GetValueFromContext(s, data); ok {
 		// Converting the resolved variable to an `int64`
 		refVal := reflect.ValueOf(val)
 
@@ -702,7 +528,7 @@ func parseReplaceMap(argString string, data map[string]interface{}) (map[string]
 		if (strings.HasPrefix(valueStr, `"`) && strings.HasSuffix(valueStr, `"`)) || (strings.HasPrefix(valueStr, `'`) && strings.HasSuffix(valueStr, `'`)) {
 			value = valueStr[1 : len(valueStr)-1]
 		} else {
-			if val, ok := getValueFromContext(valueStr, data); ok {
+			if val, ok := GetValueFromContext(valueStr, data); ok {
 				value = fmt.Sprintf("%v", val)
 			}
 		}
@@ -778,7 +604,7 @@ func parseFunctionArgs(argString string, data map[string]interface{}) []interfac
 
 	for _, arg := range strArgs {
 		// 1. Attempting to resolve the argument as a context variable
-		if val, ok := getValueFromContext(arg, data); ok {
+		if val, ok := GetValueFromContext(arg, data); ok {
 			args = append(args, val)
 		} else if num, err := strconv.ParseFloat(arg, 64); err == nil {
 			// 2. If not a variable, checking if it is a numeric literal
@@ -792,10 +618,10 @@ func parseFunctionArgs(argString string, data map[string]interface{}) []interfac
 	return args
 }
 
-// The `getValueFromContext` function can:
-// - retrieve a value from the context map, supporting the dot notation for nested maps;
-// - parse complex paths involving the dot and the subscript notation;
-func getValueFromContext(path string, data map[string]interface{}) (interface{}, bool) {
+// The `GetValueFromContext` function can:
+// - retrieve a value from the context map, supporting the dot notation for nested maps
+// - parse complex paths involving the dot and the subscript notation
+func GetValueFromContext(path string, data map[string]interface{}) (interface{}, bool) {
 	// Handling the case where the path `itself` is a key in the top-level map
 	if val, ok := data[path]; ok {
 		return val, true
@@ -816,7 +642,7 @@ func getValueFromContext(path string, data map[string]interface{}) (interface{},
 		subParts := pathSegmentRegex.FindAllStringSubmatch(part, -1)
 
 		for _, subPart := range subParts {
-			// `reflect.ValueOf` is used to inspect the variable `currentVal`
+			// Using `reflect.ValueOf` to inspect the variable `currentVal`
 			v := reflect.ValueOf(currentVal)
 
 			// Dereferencing the pointers to get to the actual value
