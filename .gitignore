@@ -33,6 +33,10 @@ go.work.sum
 # 🇬🇧 env file
 .env
 
+# 🇬🇧 Debug files
+*.log
+
 # 🇬🇧 Ignoring the temporary files from the user instructions
 compare-*
+Explain*.md
 GEM*.md
