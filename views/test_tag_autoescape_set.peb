@@ -1,0 +1,15 @@
+{% set dangerous_var = "<em>unsafe</em>" %}
+
+--- Default escaping ---
+{{ dangerous_var }}
+
+{% autoescape false %}
+--- Auto-escaping is off ---
+{% set another_var = "<strong>still unsafe</strong>" %}
+{{ dangerous_var }}
+{{ another_var }}
+{% endautoescape %}
+
+--- Auto-escaping is back on ---
+{{ dangerous_var }}
+{{ another_var }}

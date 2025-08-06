@@ -14,13 +14,45 @@ type LexFunc func(input string, data map[string]interface{}, engineConfig common
 
 // The `Apply` function acts as a dispatcher, calling the appropriate tag processing function
 func Apply(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
-	// Processing all tags in sequence: cache, flush, include, embed, block
-	output := ApplyCache(input, data, engineConfig, state, lex)
+	// Processing all tags in sequence: `autoescape`, `block`, `cache`, `embed`, `flush`, `include`
+	output := ApplyAutoescape(input, data, engineConfig, state, lex)
+	output = ApplyCache(output, data, engineConfig, state, lex)
 	output = ApplyFlush(output, data, engineConfig, state, lex)
 	output = ApplyInclude(output, data, engineConfig, state, lex)
 	output = ApplyEmbed(output, data, engineConfig, state, lex)
 	output = ApplyBlock(output, data, engineConfig, state, lex)
 	return output
+}
+
+// The `ApplyAutoescape` function processes `{% autoescape %}` tags, temporarily changing the escaping strategy
+func ApplyAutoescape(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
+	// Defining the regular expression to find `{% autoescape ... %}...{% endautoescape %}`
+	re := regexp.MustCompile(`(?s){%\s*autoescape\s+(.*?)\s*%}(.*?){%\s*endautoescape\s*%}`)
+
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := re.FindStringSubmatch(match)
+		strategyArg := strings.Trim(submatches[1], ` "'`)
+		content := submatches[2]
+
+		// Creating a copy of the current engine configuration to avoid modifying it globally
+		newConfig := engineConfig
+
+		// Determining the new escaping strategy based on the argument
+		switch strategyArg {
+		case "false":
+			newConfig.AutoEscaping = false
+		case "true":
+			newConfig.AutoEscaping = true
+			// When `true`, it should revert to the engine's original default, but for this nested scope, we will just ensure it is on.
+			// A more complex implementation could track the original default
+		default:
+			newConfig.AutoEscaping = true
+			newConfig.DefaultEscapingStrategy = strategyArg
+		}
+
+		// Recursively lexing the content with the new, temporary configuration
+		return lex(content, data, newConfig, state)
+	})
 }
 
 // The `ApplyFlush` function processes `{% flush %}` tags, removing them with no output
@@ -119,6 +151,7 @@ func ApplyEmbed(input string, data map[string]interface{}, engineConfig common.E
 
 		// Loading the embedded template
 		loadedTemplate, err := engineConfig.Loader.GetTemplate(templatePath)
+
 		if err != nil {
 			return fmt.Sprintf("[ERROR: failed to load embed template «%s»: %v]", templatePath, err)
 		}
@@ -132,6 +165,7 @@ func ApplyEmbed(input string, data map[string]interface{}, engineConfig common.E
 			// fmt.Printf("No override blocks found in embed body. Regex: %s\n", reBlockInBody.String()) // Debug
 			// fmt.Printf("Body content for regex testing (raw): %q\n", body) // Debug
 		}
+
 		for _, blockMatch := range bodyMatches {
 			blockName := blockMatch[1]
 			blockContent := strings.TrimSpace(blockMatch[2])

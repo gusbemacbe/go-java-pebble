@@ -1,0 +1,29 @@
+{% set dangerous_html = "<div>" %}
+{% set dangerous_js = "'); alert('xss');" %}
+
+--- Auto-escaping is on by default ---
+{{ dangerous_html }}
+{{ dangerous_js }}
+
+--- Temporarily disabling auto-escaping ---
+{% autoescape false %}
+{{ dangerous_html }}
+{{ dangerous_js }}
+{% endautoescape %}
+
+--- Back to default ---
+{{ dangerous_html }}
+
+--- Changing strategy to JS ---
+{% autoescape "js" %}
+{{ dangerous_js }}
+{% endautoescape %}
+
+--- Nested auto-escaping ---
+{% autoescape "js" %}
+  JS: {{ dangerous_js }}
+  {% autoescape false %}
+    Raw: {{ dangerous_js }}
+  {% endautoescape %}
+  JS again: {{ dangerous_js }}
+{% endautoescape %}

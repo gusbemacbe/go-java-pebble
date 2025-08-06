@@ -836,3 +836,75 @@ func TestSetTag(t *testing.T) {
 		t.Errorf("«The `set` tag failed. Expected '%s', got '%s'»", normalizedExpected, normalizedOutput)
 	}
 }
+
+// The `TestAutoescapeTag` function validates the `autoescape` tag
+func TestAutoescapeTag(t *testing.T) {
+	t.Log("--- Running Test Case: «Autoescape Tag» ---")
+
+	engine := pebble.NewEngine()
+	template, err := engine.GetTemplate("views/test_tag_autoescape.peb")
+	if err != nil {
+		t.Fatalf("Failed to get template: %v", err)
+	}
+
+	output, err := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
+	if err != nil {
+		t.Fatalf("Failed to evaluate template: %v", err)
+	}
+
+	t.Logf("Rendered output:\n%s", output)
+
+	// Checking the default escaping
+	if !strings.Contains(output, "&lt;div&gt;") {
+		t.Error("Default auto-escaping failed for HTML.")
+	}
+
+	// Checking the temporarily disabled escaping
+	if !strings.Contains(output, "<div>") {
+		t.Error("Failed to temporarily disable auto-escaping.")
+	}
+
+	// Checking the JS escaping
+	if !strings.Contains(output, `\'); alert(\'xss\');`) {
+		t.Error("Failed to switch escaping strategy to JS.")
+	}
+}
+
+// The `TestAutoescapeSetInteraction` function validates the interaction between `autoescape` and `set`
+func TestAutoescapeSetInteraction(t *testing.T) {
+	t.Log("--- Running Test Case: «Autoescape and Set Interaction» ---")
+
+	engine := pebble.NewEngine()
+	template, err := engine.GetTemplate("views/test_tag_autoescape_set.peb")
+
+	if err != nil {
+		t.Fatalf("Failed to get template: %v", err)
+	}
+
+	output, err := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
+
+	if err != nil {
+		t.Fatalf("Failed to evaluate template: %v", err)
+	}
+
+	t.Logf("Rendered output:\n%s", output)
+
+	// Checking that the `dangerous_var` is escaped by default
+	if !strings.Contains(output, "&lt;em&gt;unsafe&lt;/em&gt;") {
+		t.Error("Default escaping for variable set outside autoescape block failed.")
+	}
+
+	// Checking that variables are not escaped within an `autoescape false` block
+	if !strings.Contains(output, "<em>unsafe</em>") {
+		t.Error("Variable was escaped within an `autoescape false` block.")
+	}
+
+	if !strings.Contains(output, "<strong>still unsafe</strong>") {
+		t.Error("Variable set within `autoescape false` block was escaped inside the block.")
+	}
+
+	// Checking that the `another_var` is escaped after the block
+	if !strings.Contains(output, "&lt;strong&gt;still unsafe&lt;/strong&gt;") {
+		t.Error("Variable set within `autoescape false` block was not escaped after the block.")
+	}
+}
