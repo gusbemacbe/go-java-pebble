@@ -3,6 +3,7 @@ package tags
 import (
 	"fmt"
 	"go-java-pebble/common"
+	"go-java-pebble/filters"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -14,14 +15,37 @@ type LexFunc func(input string, data map[string]interface{}, engineConfig common
 
 // The `Apply` function acts as a dispatcher, calling the appropriate tag processing function
 func Apply(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
-	// Processing all tags in sequence: `autoescape`, `block`, `cache`, `embed`, `flush`, `include`
+	// Processing all tags in sequence: `autoescape`, `block`, `cache`, `embed`, `filter`, `flush`, `include`
 	output := ApplyAutoescape(input, data, engineConfig, state, lex)
+	output = ApplyFilterTag(output, data, engineConfig, state, lex)
 	output = ApplyCache(output, data, engineConfig, state, lex)
 	output = ApplyFlush(output, data, engineConfig, state, lex)
 	output = ApplyInclude(output, data, engineConfig, state, lex)
 	output = ApplyEmbed(output, data, engineConfig, state, lex)
 	output = ApplyBlock(output, data, engineConfig, state, lex)
 	return output
+}
+
+// The `ApplyFilterTag` function processes `{% filter %}` tags
+func ApplyFilterTag(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
+	re := regexp.MustCompile(`(?s){%\s*filter\s+(.*?)\s*%}(.*?){%\s*endfilter\s*%}`)
+
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := re.FindStringSubmatch(match)
+		filterChain := submatches[1]
+		content := submatches[2]
+
+		// First, rendering the content within the block
+		renderedContent := lex(content, data, engineConfig, state)
+
+		// Now, applying the filter chain to the rendered content
+		filteredContent, err := applyFilterChain(renderedContent, filterChain, data)
+		if err != nil {
+			return fmt.Sprintf("[ERROR: %s]", err.Error())
+		}
+
+		return fmt.Sprintf("%v", filteredContent)
+	})
 }
 
 // The `ApplyAutoescape` function processes `{% autoescape %}` tags, temporarily changing the escaping strategy
@@ -43,7 +67,7 @@ func ApplyAutoescape(input string, data map[string]interface{}, engineConfig com
 			newConfig.AutoEscaping = false
 		case "true":
 			newConfig.AutoEscaping = true
-			// When `true`, it should revert to the engine's original default, but for this nested scope, we will just ensure it is on.
+			// When `true`, it should revert to the engine's original default, but for this nested scope, we will just ensure it is on
 			// A more complex implementation could track the original default
 		default:
 			newConfig.AutoEscaping = true
@@ -330,4 +354,155 @@ func GetValueFromContext(path string, data map[string]interface{}) (interface{},
 	}
 
 	return currentVal, true
+}
+
+// The `applyFilterChain` function processes a chain of filters on a given value
+func applyFilterChain(value interface{}, chain string, data map[string]interface{}) (interface{}, error) {
+	currentValue := value
+	filterExpressions := strings.Split(chain, "|")
+
+	for _, filterExpr := range filterExpressions {
+		filterExpr = strings.TrimSpace(filterExpr)
+
+		if filterExpr == "" {
+			continue
+		}
+
+		reFilter := regexp.MustCompile(`(\w+)(?:\((.*)\))?`)
+		filterMatches := reFilter.FindStringSubmatch(filterExpr)
+
+		if len(filterMatches) < 2 {
+			continue
+		}
+
+		filterName := filterMatches[1]
+		argString := ""
+
+		if len(filterMatches) > 2 {
+			argString = filterMatches[2]
+		}
+
+		var err error
+		var args []interface{} // Using `[]interface{}` to handle different argument types
+
+		if filterName == "replace" {
+			// The `replace` filter is special and takes a map
+			replacements, err := parseReplaceMap(argString, data)
+
+			if err != nil {
+				return nil, err
+			}
+
+			args = append(args, replacements)
+
+		} else if argString != "" {
+			// Other filters take a simple list of strings
+			strArgs := parseFilterArgs(argString)
+
+			for _, s := range strArgs {
+				args = append(args, s)
+			}
+		}
+
+		currentValue, err = filters.Apply(currentValue, filterName, args)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return currentValue, nil
+}
+
+// The `parseFilterArgs` function intelligently splits arguments, respecting quoted strings and named arguments
+func parseFilterArgs(argString string) []string {
+	var args []string
+	var currentArg strings.Builder
+	inSingleQuotes := false
+	inDoubleQuotes := false
+
+	for _, r := range argString {
+		switch r {
+		case '\'':
+			if !inDoubleQuotes {
+				inSingleQuotes = !inSingleQuotes
+			}
+
+			// Retaining the character for the builder
+			currentArg.WriteRune(r)
+		case '"':
+			if !inSingleQuotes {
+				inDoubleQuotes = !inDoubleQuotes
+			}
+
+			// Retaining the character for the builder
+			currentArg.WriteRune(r)
+		case ',':
+			if !inSingleQuotes && !inDoubleQuotes {
+				// Argument separator found, adding the completed argument to the list
+				args = append(args, strings.TrimSpace(currentArg.String()))
+				currentArg.Reset()
+			} else {
+				currentArg.WriteRune(r)
+			}
+		default:
+			currentArg.WriteRune(r)
+		}
+	}
+
+	// Adding the final argument
+	args = append(args, strings.TrimSpace(currentArg.String()))
+
+	// Cleaning up the arguments by removing quotes and the `key=` part
+	for i, arg := range args {
+		if equalIndex := strings.Index(arg, "="); equalIndex != -1 {
+			// This is a named argument, taking only the value part
+			arg = arg[equalIndex+1:]
+		}
+
+		args[i] = strings.Trim(strings.TrimSpace(arg), `"'`)
+	}
+
+	return args
+}
+
+// The `parseReplaceMap` function parses the map literal argument for the `replace` filter
+func parseReplaceMap(argString string, data map[string]interface{}) (map[string]string, error) {
+	replacements := make(map[string]string)
+	// Trimming the `{` and `}` from the string
+	content := strings.TrimSpace(argString)
+
+	if !strings.HasPrefix(content, "{") || !strings.HasSuffix(content, "}") {
+		return nil, fmt.Errorf("«invalid map literal for 'replace' filter»")
+	}
+
+	content = content[1 : len(content)-1]
+
+	// Splitting the content into key-value pairs
+	pairs := strings.Split(content, ",")
+
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, ":", 2)
+
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.Trim(strings.TrimSpace(parts[0]), `"'`)
+		valueStr := strings.TrimSpace(parts[1])
+
+		var value string
+		// Checking if the value is a string literal or a context variable
+		if (strings.HasPrefix(valueStr, `"`) && strings.HasSuffix(valueStr, `"`)) || (strings.HasPrefix(valueStr, `'`) && strings.HasSuffix(valueStr, `'`)) {
+			value = valueStr[1 : len(valueStr)-1]
+		} else {
+			if val, ok := GetValueFromContext(valueStr, data); ok {
+				value = fmt.Sprintf("%v", val)
+			}
+		}
+
+		replacements[key] = value
+	}
+
+	return replacements, nil
 }

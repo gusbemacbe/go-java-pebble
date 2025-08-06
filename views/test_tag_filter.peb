@@ -1,0 +1,7 @@
+{% filter upper %}
+  This text should be uppercase.
+{% endfilter %}
+
+{% filter upper | escape %}
+  This <strong>HTML</strong> should be uppercased and escaped.
+{% endfilter %}

@@ -908,3 +908,33 @@ func TestAutoescapeSetInteraction(t *testing.T) {
 		t.Error("Variable set within `autoescape false` block was not escaped after the block.")
 	}
 }
+
+// The `TestFilterTag` function validates the `filter` tag
+func TestFilterTag(t *testing.T) {
+	t.Log("--- Running Test Case: «Filter Tag» ---")
+
+	engine := pebble.NewEngine()
+	template, err := engine.GetTemplate("views/test_tag_filter.peb")
+
+	if err != nil {
+		t.Fatalf("Failed to get template: %v", err)
+	}
+
+	output, err := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(nil, "")
+
+	if err != nil {
+		t.Fatalf("Failed to evaluate template: %v", err)
+	}
+
+	t.Logf("Rendered output:\n%s", output)
+
+	// Checking the simple uppercase filter
+	if !strings.Contains(output, "THIS TEXT SHOULD BE UPPERCASE.") {
+		t.Error("The `filter` tag with `upper` failed.")
+	}
+
+	// Checking the chained uppercase and escape filters
+	if !strings.Contains(output, "THIS &lt;STRONG&gt;HTML&lt;/STRONG&gt; SHOULD BE UPPERCASED AND ESCAPED.") {
+		t.Error("The `filter` tag with chained `upper | escape` failed.")
+	}
+}
