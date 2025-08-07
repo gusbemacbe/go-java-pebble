@@ -938,3 +938,41 @@ func TestFilterTag(t *testing.T) {
 		t.Error("The `filter` tag with chained `upper | escape` failed.")
 	}
 }
+
+// The `TestDynamicInheritance` function validates the `extends` tag with a dynamic parent
+func TestDynamicInheritance(t *testing.T) {
+	t.Log("--- Running Test Case: «Dynamic Inheritance» ---")
+
+	engine := pebble.NewEngine()
+
+	// --- Test Case 1: `ajax` is false (should use base_layout) ---
+	contextBase := make(map[string]interface{})
+	contextBase["ajax"] = false
+	templateBase, _ := engine.GetTemplate("views/test_tag_extends_dynamic_inheritance.peb")
+	outputBase, _ := templateBase.(*pebble.PebbleTemplate).EvaluateAndGetResult(contextBase, "")
+
+	t.Logf("Rendered output (ajax=false):\n%s", outputBase)
+
+	if !strings.Contains(outputBase, "<title>Base Layout</title>") {
+		t.Error("Dynamic inheritance failed to select the base layout.")
+	}
+	if strings.Contains(outputBase, `<div id="ajax-content">`) {
+		t.Error("Dynamic inheritance incorrectly rendered the ajax layout.")
+	}
+
+	// --- Test Case 2: `ajax` is true (should use ajax_layout) ---
+	contextAjax := make(map[string]interface{})
+	contextAjax["ajax"] = true
+	templateAjax, _ := engine.GetTemplate("views/test_tag_extends_dynamic_inheritance.peb")
+	outputAjax, _ := templateAjax.(*pebble.PebbleTemplate).EvaluateAndGetResult(contextAjax, "")
+
+	t.Logf("Rendered output (ajax=true):\n%s", outputAjax)
+
+	if !strings.Contains(outputAjax, `<div id="ajax-content">`) {
+		t.Error("Dynamic inheritance failed to select the ajax layout.")
+	}
+
+	if strings.Contains(outputAjax, "<title>Base Layout</title>") {
+		t.Error("Dynamic inheritance incorrectly rendered the base layout.")
+	}
+}

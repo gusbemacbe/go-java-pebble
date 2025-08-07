@@ -8,6 +8,7 @@ import (
 	"go-java-pebble/lexers"
 	"io"
 	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -94,6 +95,8 @@ type PebbleTemplate struct {
 	parent *PebbleTemplate
 	// A map of the blocks declared within this template
 	blocks map[string]string
+	// The raw expression used in the `extends` tag, if any. Used for dynamic inheritance.
+	parentPathExpression string
 }
 
 // The `Parent` method is a public accessor for the parent template, returning the `common.Template` interface
@@ -136,23 +139,15 @@ func (engine *PebbleEngine) GetTemplate(path string) (common.Template, error) {
 		blocks:  make(map[string]string),
 	}
 
-	// Parsing for an `extends` tag
-	reExtends := regexp.MustCompile(`(?s){%\s*extends\s+"([^"]+)"\s*%}`)
+	// Parsing for an `extends` tag and storing the expression
+	reExtends := regexp.MustCompile(`(?s){%\s*extends\s+(.*?)\s*%}`)
 	matches := reExtends.FindStringSubmatch(content)
 
 	if len(matches) > 1 {
-		parentPath := matches[1]
-
-		// Recursively loading the parent template
-		parentTemplate, err := engine.GetTemplate(parentPath)
-		if err != nil {
-			return nil, fmt.Errorf("«failed to load parent template '%s': %w»", parentPath, err)
-		}
-
-		template.parent = parentTemplate.(*PebbleTemplate)
+		template.parentPathExpression = strings.TrimSpace(matches[1])
 	}
 
-	// Parsing and storing all blocks defined in this template
+	// Parsing and storing all blocks defined in this template.
 	reBlock := regexp.MustCompile(`(?s){%\s*block\s+"([^"]+)"\s*%}(.*?){%\s*endblock\s*%}`)
 	blockMatches := reBlock.FindAllStringSubmatch(content, -1)
 
@@ -166,9 +161,55 @@ func (engine *PebbleEngine) GetTemplate(path string) (common.Template, error) {
 	return template, nil
 }
 
+// The `evaluateInheritanceExpression` function handles the simple ternary expressions for dynamic inheritance
+func evaluateInheritanceExpression(expression string, context map[string]interface{}) (string, error) {
+	// Handling a simple string literal.
+	if strings.HasPrefix(expression, `"`) && strings.HasSuffix(expression, `"`) {
+		return strings.Trim(expression, `"`), nil
+	}
+
+	// Handling a ternary operator
+	re := regexp.MustCompile(`(.+?)\s*\?\s*(.+?)\s*:\s*(.+)`)
+	matches := re.FindStringSubmatch(expression)
+
+	if len(matches) == 4 {
+		conditionVar := strings.TrimSpace(matches[1])
+		truePath := strings.Trim(strings.TrimSpace(matches[2]), ` "'`)
+		falsePath := strings.Trim(strings.TrimSpace(matches[3]), ` "'`)
+
+		if context != nil {
+			if val, ok := context[conditionVar]; ok {
+				if boolVal, isBool := val.(bool); isBool && boolVal {
+					return truePath, nil
+				}
+			}
+		}
+		// Defaulting to the false path if the context is `nil` or the condition is not `true`.
+		return falsePath, nil
+	}
+
+	return "", fmt.Errorf("«unsupported expression in extends tag: %s»", expression)
+}
+
 // The `Evaluate` method processes the template with the given context and writes the output to a writer
 func (template *PebbleTemplate) Evaluate(writer io.Writer, context map[string]interface{}, locale string) error {
-	// If this template extends another, the rendering process must start from the parent, passing itself (`template`) as the leaf node of the inheritance tree.
+	// Checking if we need to resolve a dynamic parent.
+	if template.parentPathExpression != "" && template.parent == nil {
+		parentPath, err := evaluateInheritanceExpression(template.parentPathExpression, context)
+		if err != nil {
+			return err
+		}
+
+		parentTemplate, err := template.engine.GetTemplate(parentPath)
+
+		if err != nil {
+			return fmt.Errorf("«failed to load dynamic parent template '%s': %w»", parentPath, err)
+		}
+
+		template.parent = parentTemplate.(*PebbleTemplate)
+	}
+
+	// If this template extends another, the rendering process must start from the parent.
 	if template.parent != nil {
 		// We pass this child’s blocks to the parent for the evaluation
 		return template.parent.evaluateWithBlocks(writer, context, locale, template)

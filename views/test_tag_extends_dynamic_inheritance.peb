@@ -1,0 +1,5 @@
+{% extends ajax ? "views/test_tag_extends_ajax_layout.peb" : "views/test_tag_extends_base_layout.peb" %}
+
+{% block content %}
+<p>This is the content of the page.</p>
+{% endblock %}
