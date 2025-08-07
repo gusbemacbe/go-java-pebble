@@ -1,0 +1,6 @@
+--- Testing with a non-empty list ---
+{% for user in users %}
+  - {{ user }}
+{% else %}
+  There are no users.
+{% endfor %}

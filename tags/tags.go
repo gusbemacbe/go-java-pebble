@@ -6,6 +6,7 @@ import (
 	"go-java-pebble/functions"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -32,6 +33,224 @@ func Apply(input string, data map[string]interface{}, engineConfig common.Engine
 func ApplyExtends(input string) string {
 	re := regexp.MustCompile(`(?s){%\s*extends\s+"[^"]+"\s*%}`)
 	return re.ReplaceAllString(input, "")
+}
+
+// The `ApplyIf` function processes `{% if %}` tags
+func ApplyIf(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
+	re := regexp.MustCompile(`(?s){%\s*if\s+(.*?)\s*%}(.*?)(?:{%\s*else\s*%}(.*?))?{%\s*endif\s*%}`)
+
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := re.FindStringSubmatch(match)
+		conditionKey := submatches[1]
+		ifBlock := submatches[2]
+		elseBlock := submatches[3] // This may be empty
+
+		// Evaluating the condition
+		val, exists := common.GetValueFromContext(conditionKey, data)
+
+		// If the variable for the condition does not exist
+		if !exists {
+			// Checking if the strict mode is enabled
+			if engineConfig.StrictVariables {
+				// In strict mode, a non-existent variable in a condition is an error
+				return fmt.Sprintf("[ERROR: Variable «%s» not found in if condition]", conditionKey)
+			}
+
+			// In non-strict mode, a non-existent variable evaluates to `false`, so we render the `else` block
+			return lex(elseBlock, data, engineConfig, state)
+		}
+
+		// A simple truthiness check on the existing value
+		conditionResult := false
+
+		// A simple truthiness check: not nil, not false, not an empty string, not zero
+		if boolVal, ok := val.(bool); ok {
+			conditionResult = boolVal
+		}
+
+		if conditionResult {
+			return lex(ifBlock, data, engineConfig, state)
+		}
+
+		return lex(elseBlock, data, engineConfig, state)
+	})
+}
+
+// The `ApplyFor` function processes `{% for %}` tags
+func ApplyFor(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
+	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(.*?)\s*%}(.*?)(?:{%\s*else\s*%}(.*?))?{%\s*endfor\s*%}`)
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := re.FindStringSubmatch(match)
+		loopVar := submatches[1]
+		collectionExpression := strings.TrimSpace(submatches[2])
+		loopBody := submatches[3]
+		elseBody := submatches[4]
+
+		var collection interface{}
+		var exists bool
+
+		reRangeOp := regexp.MustCompile(`^(\w+|\d+)\.\.(\w+|\d+)$`)
+		rangeMatches := reRangeOp.FindStringSubmatch(collectionExpression)
+
+		reFunc := regexp.MustCompile(`^(\w+)\((.*)\)$`)
+		funcMatches := reFunc.FindStringSubmatch(collectionExpression)
+
+		if len(rangeMatches) > 0 {
+			startStr := rangeMatches[1]
+			endStr := rangeMatches[2]
+
+			start, err1 := common.ResolveNumeric(startStr, data)
+			end, err2 := common.ResolveNumeric(endStr, data)
+
+			if err1 != nil || err2 != nil {
+				return "[ERROR: range operator bounds must be numeric or resolvable variables]"
+			}
+
+			var rangeSlice []int64
+
+			for i := start; i <= end; i++ {
+				rangeSlice = append(rangeSlice, i)
+			}
+
+			collection = rangeSlice
+			exists = true
+		} else if len(funcMatches) > 0 {
+			functionName := funcMatches[1]
+			argString := funcMatches[2]
+			context := functions.EvaluationContext{
+				Locale: engineConfig.Locale,
+				Data:   data,
+			}
+
+			args := common.ParseFunctionArgs(argString, data)
+			result, err := functions.Apply(functionName, context, args)
+
+			if err != nil {
+				return fmt.Sprintf("[ERROR: %s]", err.Error())
+			}
+
+			collection = result
+			exists = true
+		} else {
+			parts := strings.SplitN(collectionExpression, "|", 2)
+			variablePart := strings.TrimSpace(parts[0])
+			var filterChainPart string
+
+			if len(parts) > 1 {
+				filterChainPart = strings.TrimSpace(parts[1])
+			}
+
+			isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) || (strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
+
+			if isStringLiteral {
+				collection = variablePart[1 : len(variablePart)-1]
+				exists = true
+			} else {
+				collection, exists = common.GetValueFromContext(variablePart, data)
+			}
+
+			if exists && filterChainPart != "" {
+				var err error
+				collection, err = common.ApplyFilterChain(collection, filterChainPart, data)
+				if err != nil {
+					return fmt.Sprintf("[ERROR: %s]", err.Error())
+				}
+			}
+		}
+
+		if !exists {
+			return lex(elseBody, data, engineConfig, state)
+		}
+
+		val := reflect.ValueOf(collection)
+		var result strings.Builder
+
+		switch val.Kind() {
+		case reflect.Slice, reflect.Array:
+			length := val.Len()
+
+			if length == 0 {
+				return lex(elseBody, data, engineConfig, state)
+			}
+			for i := 0; i < length; i++ {
+				loopContext := make(map[string]interface{})
+
+				for k, v := range data {
+					loopContext[k] = v
+				}
+
+				loopContext[loopVar] = val.Index(i).Interface()
+				loopContext["loop"] = map[string]interface{}{
+					"index":    i,
+					"length":   length,
+					"first":    i == 0,
+					"last":     i == length-1,
+					"revindex": length - i,
+				}
+
+				result.WriteString(lex(loopBody, loopContext, engineConfig, state))
+			}
+
+		case reflect.Map:
+			keys := val.MapKeys()
+			length := len(keys)
+
+			if length == 0 {
+				return lex(elseBody, data, engineConfig, state)
+			}
+
+			// Sorting map keys for consistent iteration order
+			sort.Slice(keys, func(i, j int) bool {
+				return fmt.Sprintf("%v", keys[i].Interface()) < fmt.Sprintf("%v", keys[j].Interface())
+			})
+
+			for i, key := range keys {
+				loopContext := make(map[string]interface{})
+
+				for k, v := range data {
+					loopContext[k] = v
+				}
+
+				loopContext[loopVar] = map[string]interface{}{
+					"key":   key.Interface(),
+					"value": val.MapIndex(key).Interface(),
+				}
+
+				loopContext["loop"] = map[string]interface{}{
+					"index":    i,
+					"length":   length,
+					"first":    i == 0,
+					"last":     i == length-1,
+					"revindex": length - i,
+				}
+
+				result.WriteString(lex(loopBody, loopContext, engineConfig, state))
+			}
+		default:
+			return lex(elseBody, data, engineConfig, state)
+		}
+
+		return result.String()
+	})
+}
+
+// The `ApplyFilterTag` function processes `{% filter %}` tags
+func ApplyFilterTag(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
+	re := regexp.MustCompile(`(?s){%\s*filter\s+(.+?)\s*%}(.*?){%\s*endfilter\s*%}`)
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := re.FindStringSubmatch(match)
+		filterChain := strings.TrimSpace(submatches[1])
+		content := submatches[2]
+
+		renderedContent := lex(content, data, engineConfig, state)
+		result, err := common.ApplyFilterChain(renderedContent, filterChain, data)
+
+		if err != nil {
+			return fmt.Sprintf("[ERROR: %s]", err.Error())
+		}
+
+		return fmt.Sprintf("%v", result)
+	})
 }
 
 // The `ApplyAutoescape` function processes `{% autoescape %}` tags, temporarily changing the escaping strategy
@@ -65,31 +284,20 @@ func ApplyAutoescape(input string, data map[string]interface{}, engineConfig com
 	})
 }
 
-// The `ApplyFilterTag` function processes `{% filter %}` tags, supporting the filter chains
-func ApplyFilterTag(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
-	re := regexp.MustCompile(`(?s){%\s*filter\s+(.+?)\s*%}(.*?){%\s*endfilter\s*%}`)
-	return re.ReplaceAllStringFunc(input, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
-		filterChain := strings.TrimSpace(submatches[1])
-		content := submatches[2]
-
-		renderedContent := lex(content, data, engineConfig, state)
-		result, err := common.ApplyFilterChain(renderedContent, filterChain, data)
-
-		if err != nil {
-			return fmt.Sprintf("[ERROR: %s]", err.Error())
-		}
-
-		return fmt.Sprintf("%v", result)
-	})
+// The `ApplyFlush` function processes `{% flush %}` tags, removing them with no output
+func ApplyFlush(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
+	// Defining the regular expression to find `{% flush %}` tags
+	reFlush := regexp.MustCompile(`(?s){%\s*flush\s*%}`)
+	// Removing the `flush` tags, as they have no effect in the in-memory model.
+	return reFlush.ReplaceAllString(input, "")
 }
 
 // The `ApplyCache` function processes `{% cache %}` tags, caching content by key
 func ApplyCache(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
 	// Defining the regular expression to find `{% cache 'name' %}...{% endcache %}`
-	re := regexp.MustCompile(`(?s){%\s*cache\s+'([^']+)'\s*%}(.*?){%\s*endcache\s*%}`)
-	return re.ReplaceAllStringFunc(input, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
+	reCache := regexp.MustCompile(`(?s){%\s*cache\s+'([^']+)'\s*%}(.*?){%\s*endcache\s*%}`)
+	return reCache.ReplaceAllStringFunc(input, func(match string) string {
+		submatches := reCache.FindStringSubmatch(match)
 		cacheName := submatches[1]
 		content := submatches[2]
 
@@ -114,12 +322,6 @@ func ApplyCache(input string, data map[string]interface{}, engineConfig common.E
 
 		return renderedContent
 	})
-}
-
-// The `ApplyFlush` function processes `{% flush %}` tags
-func ApplyFlush(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
-	re := regexp.MustCompile(`(?s){%\s*flush\s*%}`)
-	return re.ReplaceAllString(input, "")
 }
 
 // The `ApplyInclude` function processes `{% include %}` tags
@@ -259,131 +461,5 @@ func ApplyBlock(input string, data map[string]interface{}, engineConfig common.E
 		// If there is no override, rendering this template's own block content
 		// Rendering the default block content
 		return lex(defaultContent, data, engineConfig, state)
-	})
-}
-
-// The `ApplyIf` function processes `{% if %}` tags
-func ApplyIf(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
-	re := regexp.MustCompile(`(?s){%\s*if\s+(.*?)\s*%}(.*?)(?:{%\s*else\s*%}(.*?))?{%\s*endif\s*%}`)
-	return re.ReplaceAllStringFunc(input, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
-		conditionKey := submatches[1]
-		ifBlock := submatches[2]
-		elseBlock := submatches[3]
-
-		val, exists := common.GetValueFromContext(conditionKey, data)
-		if !exists {
-			if engineConfig.StrictVariables {
-				return fmt.Sprintf("[ERROR: Variable «%s» not found in if condition]", conditionKey)
-			}
-			return lex(elseBlock, data, engineConfig, state)
-		}
-
-		conditionResult := false
-		if boolVal, ok := val.(bool); ok {
-			conditionResult = boolVal
-		} else if val != nil {
-			conditionResult = true
-		}
-
-		if conditionResult {
-			return lex(ifBlock, data, engineConfig, state)
-		}
-		return lex(elseBlock, data, engineConfig, state)
-	})
-}
-
-// The `ApplyFor` function processes `{% for %}` tags
-func ApplyFor(input string, data map[string]interface{}, engineConfig common.EngineConfig, state *common.TemplateState, lex LexFunc) string {
-	re := regexp.MustCompile(`(?s){%\s*for\s+(\w+)\s+in\s+(.*?)\s*%}(.*?){%\s*endfor\s*%}`)
-	return re.ReplaceAllStringFunc(input, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
-		loopVar := submatches[1]
-		collectionExpression := strings.TrimSpace(submatches[2])
-		loopBody := submatches[3]
-
-		var collection interface{}
-		var exists bool
-
-		reRangeOp := regexp.MustCompile(`^(\w+|\d+)\.\.(\w+|\d+)$`)
-		rangeMatches := reRangeOp.FindStringSubmatch(collectionExpression)
-
-		reFunc := regexp.MustCompile(`^(\w+)\((.*)\)$`)
-		funcMatches := reFunc.FindStringSubmatch(collectionExpression)
-
-		if len(rangeMatches) > 0 {
-			startStr := rangeMatches[1]
-			endStr := rangeMatches[2]
-
-			start, err1 := common.ResolveNumeric(startStr, data)
-			end, err2 := common.ResolveNumeric(endStr, data)
-			if err1 != nil || err2 != nil {
-				return "[ERROR: range operator bounds must be numeric or resolvable variables]"
-			}
-
-			var rangeSlice []int64
-			for i := start; i <= end; i++ {
-				rangeSlice = append(rangeSlice, i)
-			}
-			collection = rangeSlice
-			exists = true
-		} else if len(funcMatches) > 0 {
-			functionName := funcMatches[1]
-			argString := funcMatches[2]
-			context := functions.EvaluationContext{
-				Locale: engineConfig.Locale,
-				Data:   data,
-			}
-			args := common.ParseFunctionArgs(argString, data)
-			result, err := functions.Apply(functionName, context, args)
-			if err != nil {
-				return fmt.Sprintf("[ERROR: %s]", err.Error())
-			}
-			collection = result
-			exists = true
-		} else {
-			parts := strings.SplitN(collectionExpression, "|", 2)
-			variablePart := strings.TrimSpace(parts[0])
-			var filterChainPart string
-			if len(parts) > 1 {
-				filterChainPart = strings.TrimSpace(parts[1])
-			}
-
-			isStringLiteral := (strings.HasPrefix(variablePart, `"`) && strings.HasSuffix(variablePart, `"`)) || (strings.HasPrefix(variablePart, `'`) && strings.HasSuffix(variablePart, `'`))
-			if isStringLiteral {
-				collection = variablePart[1 : len(variablePart)-1]
-				exists = true
-			} else {
-				collection, exists = common.GetValueFromContext(variablePart, data)
-			}
-
-			if exists && filterChainPart != "" {
-				var err error
-				collection, err = common.ApplyFilterChain(collection, filterChainPart, data)
-				if err != nil {
-					return fmt.Sprintf("[ERROR: %s]", err.Error())
-				}
-			}
-		}
-
-		if !exists {
-			return ""
-		}
-
-		val := reflect.ValueOf(collection)
-		if val.Kind() != reflect.Slice {
-			return ""
-		}
-
-		var result strings.Builder
-		for i := 0; i < val.Len(); i++ {
-			loopContext := make(map[string]interface{})
-			for k, v := range data {
-				loopContext[k] = v
-			}
-			loopContext[loopVar] = val.Index(i).Interface()
-			result.WriteString(lex(loopBody, loopContext, engineConfig, state))
-		}
-		return result.String()
 	})
 }

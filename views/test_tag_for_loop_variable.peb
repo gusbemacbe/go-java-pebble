@@ -1,0 +1,3 @@
+{% for user in users %}
+  Index: {{ loop.index }}, Revindex: {{ loop.revindex }}, First: {{ loop.first }}, Last: {{ loop.last }}, Length: {{ loop.length }} - {{ user }}
+{% endfor %}

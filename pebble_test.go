@@ -976,3 +976,94 @@ func TestDynamicInheritance(t *testing.T) {
 		t.Error("Dynamic inheritance incorrectly rendered the base layout.")
 	}
 }
+
+// The `TestForTag` function validates a `for` tag with a non-empty list
+func TestForTag(t *testing.T) {
+	t.Log("--- Running Test Case: «For Tag» ---")
+
+	engine := pebble.NewEngine()
+	context := make(map[string]interface{})
+	context["users"] = []string{"Alex", "Joe", "Bob"}
+
+	template, _ := engine.GetTemplate("views/test_tag_for.peb")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
+
+	t.Logf("Rendered output:\n%s", output)
+
+	if !strings.Contains(output, "- Alex") {
+		t.Error("The `for` loop did not render for a non-empty list.")
+	}
+
+	if strings.Contains(output, "There are no users.") {
+		t.Error("The `else` block was rendered for a non-empty list.")
+	}
+}
+
+// The `TestForTagElseBlock` function validates the `else` block of a `for` tag
+func TestForTagElseBlock(t *testing.T) {
+	t.Log("--- Running Test Case: «For Tag Else Block» ---")
+
+	engine := pebble.NewEngine()
+	context := make(map[string]interface{})
+	context["empty_users"] = []string{}
+
+	template, _ := engine.GetTemplate("views/test_tag_for_else.peb")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
+
+	t.Logf("Rendered output:\n%s", output)
+
+	if !strings.Contains(output, "There are no users.") {
+		t.Error("The `else` block was not rendered for an empty list.")
+	}
+}
+
+// The `TestForTagLoopVariable` function validates the `loop` variable inside a `for` tag
+func TestForTagLoopVariable(t *testing.T) {
+	t.Log("--- Running Test Case: «For Tag Loop Variable» ---")
+
+	engine := pebble.NewEngine()
+	context := make(map[string]interface{})
+	context["users"] = []string{"Alex", "Joe", "Bob"}
+
+	template, _ := engine.GetTemplate("views/test_tag_for_loop_variable.peb")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
+
+	t.Logf("Rendered output:\n%s", output)
+
+	expected := `
+		Index: 0, Revindex: 3, First: true, Last: false, Length: 3 - Alex
+		Index: 1, Revindex: 2, First: false, Last: false, Length: 3 - Joe
+		Index: 2, Revindex: 1, First: false, Last: true, Length: 3 - Bob
+	`
+	normalizedOutput := strings.Join(strings.Fields(output), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if normalizedOutput != normalizedExpected {
+		t.Errorf("The `loop` variable was not correctly populated. Expected '%s', got '%s'", normalizedExpected, normalizedOutput)
+	}
+}
+
+// The `TestForTagMapIteration` function validates the iteration over a map
+func TestForTagMapIteration(t *testing.T) {
+	t.Log("--- Running Test Case: «For Tag Map Iteration» ---")
+
+	engine := pebble.NewEngine()
+	context := make(map[string]interface{})
+	context["user_map"] = map[string]string{
+		"name": "Benozzo",
+		"city": "São Paulo",
+	}
+
+	template, _ := engine.GetTemplate("views/test_tag_for_map_iteration.peb")
+	output, _ := template.(*pebble.PebbleTemplate).EvaluateAndGetResult(context, "")
+
+	t.Logf("Rendered output:\n%s", output)
+
+	if !strings.Contains(output, "name: Benozzo") {
+		t.Error("Failed to iterate over a map and access the `key` and `value`.")
+	}
+
+	if !strings.Contains(output, "city: São Paulo") {
+		t.Error("Failed to iterate over a map and access the `key` and `value`.")
+	}
+}
